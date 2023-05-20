@@ -1,5 +1,6 @@
 import pandas as pd
 import os
+from datetime import datetime
 
 class Data():
     """ Класс, выкачивающий данные
@@ -45,7 +46,10 @@ class Data():
             df_money.index = df_money['TID']
             df_money.drop(['TID','остаток на 31.08.2022 (входящий)'], axis=1, inplace=True)
             df_money_in = df_money.unstack(level=0)
-            self.df_money_in = df_money_in.reset_index().rename(columns = {'level_0':'date', 0:'money_in'})
+            df_money_in = df_money_in.reset_index().rename(columns={'level_0':'date', 0:'money_in'})
+            df_money_in['date'] = df_money_in['date'].apply(lambda x: datetime.strptime(x, "%Y-%m-%d %H:%M:%S"))
+            self.df_money_in = df_money_in
+
         return self.df_money_in
 
 
