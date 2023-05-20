@@ -1,6 +1,5 @@
 import pandas as pd
 import os
-from datetime import datetime
 
 class Data():
     """ Класс, выкачивающий данные
@@ -47,7 +46,7 @@ class Data():
             df_money.drop(['TID','остаток на 31.08.2022 (входящий)'], axis=1, inplace=True)
             df_money_in = df_money.unstack(level=0)
             df_money_in = df_money_in.reset_index().rename(columns={'level_0':'date', 0:'money_in'})
-            df_money_in['date'] = df_money_in['date'].apply(lambda x: datetime.strptime(x, "%Y-%m-%d %H:%M:%S"))
+            df_money_in['date'] = pd.to_datetime(df_money_in['date'])
             self.df_money_in = df_money_in
 
         return self.df_money_in
