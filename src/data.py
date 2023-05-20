@@ -16,6 +16,7 @@ class Data():
         self.df_money_in = None
         self.df_geo_TIDS = None
         self.df_distance_matrix = None
+        self.params_dict = None
     
     def get_distance_matrix(self):
         if self.df_distance_matrix is None:
@@ -53,3 +54,10 @@ class Data():
             geo_TIDS_folder = os.path.join(self.data_folder, 'terminal_data_hackathon v4.xlsx')
             self.df_geo_TIDS = pd.read_excel(geo_TIDS_folder, sheet_name='TIDS')
         return self.df_geo_TIDS
+    
+    def get_params_dict(self):
+        if self.params_dict is None:
+            params_folder = os.path.join(self.data_folder, 'Params.xlsx')
+            df_params= pd.read_excel(params_folder)
+            self.params_dict = df_params.set_index('param')['value'].to_dict()
+        return self.params_dict
