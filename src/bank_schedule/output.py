@@ -1,8 +1,8 @@
 from tqdm import tqdm
-from pandas as pd
+import pandas as pd
 from datetime import datetime, timedelta
 
-def find_ATM_balance(df_opt_result, df_money, df_money_start, max_money):
+def find_ATM_balance(df_opt_result, df_money, df_money_start, params_dict):
     """
     Функция принимает результаты оптимизации и выдает датафрейм с остатками на счетах в банкоматах на каждый день
     """
@@ -39,6 +39,39 @@ def find_ATM_balance(df_opt_result, df_money, df_money_start, max_money):
     df_money_sum.drop([date_minus_1], axis=1, inplace=True)
 
     # ограничиваем максимальной вместительностью
-    condition = df_money_sum < max_money
-    df_money_sum = df_money_sum.where(condition, other = max_money)
+    condition = df_money_sum < params_dict['max_money']
+    df_money_sum = df_money_sum.where(condition, other = params_dict['max_money'])
     return df_money_sum
+
+def find_cost_inc(df_money_sum, df_opt_result, df_money_start, params_dict):
+    """
+    Функция принимающая на вход остатки в банкоматах и результат оптимизации 
+    и выдающая стоимость инкасаций, которые мы нашли в результате оптимизаций
+    """
+    date_start = df_money_sum.columns.min()
+    date_minus_1  = date_start - timedelta(days=1)
+    df_money_sum[date_minus_1] = df_money_start['money']
+    df_money_sum = df_money_sum[df_money_sum.columns.sort_values()]
+
+
+    unique_date = pd.to_datetime(df_opt_result.date.unique())     #уникальные дни инкасации
+    dict_date_to_num = { k:v for (v, k) in enumerate(df_money_sum.columns)}
+    dict_num_to_date= { v:k for (v, k) in enumerate(df_money_sum.columns)}
+    num_TID = df_money_sum.shape[0]
+
+    df_cost_inc = pd.DataFrame(index=df_money_sum.index)
+    for day in tqdm(unique_date):
+        date_before = dict_num_to_date[dict_date_to_num[day]-1]
+        #df_cost_inc[day] = [0] * num_TID
+        df_cost_inc.loc[list(df_opt_result[df_opt_result.date==day]['TID']), day] = df_money_sum.loc[list(df_opt_result[df_opt_result.date==day]['TID']), date_before] * 0.00001
+
+
+    df_cost_inc = df_cost_inc.fillna(0)
+
+    condition = (df_cost_inc >= params_dict['cost_inc_min']) | (df_cost_inc == 0)
+    df_cost_inc = df_cost_inc.where(condition, other = params_dict['cost_inc_min'])
+    return df_cost_inc
+
+def find_sum_fond(df_money_sum, params_dict):
+    df_fond = df_money_sum * params_dict['overnight'] / 100 / 365
+    return df_fond
