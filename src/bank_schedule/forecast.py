@@ -13,24 +13,23 @@ from sklearn.metrics import (
     r2_score
     )
 
-def classic_model_ts_cv(model,
-                        features,
-                        targets,
+def classic_model_ts_cv(model: object,
+                        features: pd.DataFrame,
+                        targets: pd.Series,
                         metric: str='rmse',
                         n_splits: int=5) -> List:
-    """Кросс-валидация классической модели (бустинг etc.) для прогноза временных рядом
+    """Кросс-валидация классической модели (бустинг etc.) для прогноза временных рядов
 
     Args:
-        model (_type_): _description_
-        features (_type_): _description_
-        targets (_type_): _description_
+        model (object): модель
+        features (pd.DataFrame): датафрейм признаков
+        targets (pd.Series): серия целевого признака
         metric (str, optional): _description_. Defaults to 'rmse'.
         n_splits (int, optional): _description_. Defaults to 5.
 
     Returns:
         List: _description_
     """
-
     score_list = []
     cross_validator = TimeSeriesSplit(n_splits=n_splits)
 
@@ -59,16 +58,15 @@ def classic_model_ts_cv(model,
     return score_list
 
 
-def arima_model_ts_cv(model,
-                      targets,
+def arima_model_ts_cv(model: object,
+                      targets: pd.Series,
                       metric: str='rmse',
                       n_splits: int=5) -> List:
-    """Кросс-валидация классической модели (бустинг etc.) для прогноза временных рядом
+    """_summary_
 
     Args:
-        model (_type_): _description_
-        features (_type_): _description_
-        targets (_type_): _description_
+        model (object): _description_
+        targets (pd.Series): _description_
         metric (str, optional): _description_. Defaults to 'rmse'.
         n_splits (int, optional): _description_. Defaults to 5.
 
@@ -133,7 +131,7 @@ class SimpleRollingForecast:
         self.rolling_mean = window_series.ewm(alpha=self.alpha).mean().iloc[-1]
 
 
-    def predict(self, n_periods: int):
+    def predict(self, n_periods: int) -> pd.Series:
         """прогнозирует просто средним по скользящему окну
         на заданное количество дней вперед
 
