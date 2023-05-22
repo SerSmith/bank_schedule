@@ -11,6 +11,10 @@ PROJECT_ROOT = os.path.dirname(
 RAW_DATA_FOLDER = os.path.join(PROJECT_ROOT, 'data', 'raw')
 PROCESSED_DATA_FOLDER = os.path.join(PROJECT_ROOT, 'data', 'processed')
 INTERIM_DATA_FOLDER = os.path.join(PROJECT_ROOT, 'data', 'interim')
+TRAIN_DATA_FILEPATH = os.path.join(INTERIM_DATA_FOLDER, 'train.csv')
+
+MODELS_FOLDER = os.path.join(PROJECT_ROOT, 'models')
+LGBM_FOLDER = os.path.join(MODELS_FOLDER, 'lgbm')
 
 # центр Москвы
 CENTER_LAT = 55.755864

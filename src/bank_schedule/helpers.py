@@ -1,22 +1,22 @@
 """Вспомогательные функции
 """
 import os
-from tqdm import tqdm
-
 from math import pi
+from warnings import warn
 
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 
+from bank_schedule.data import Data
 from bank_schedule.constants import (
     EARTH_R,
     CENTER_LAT,
     CENTER_LON,
     RAW_DATA_FOLDER,
-    INTERIM_DATA_FOLDER
+    INTERIM_DATA_FOLDER,
+    TRAIN_DATA_FILEPATH
 )
-
-from bank_schedule.data import Data
 
 
 def haversine_vectorized(
@@ -214,5 +214,91 @@ def create_features(in_df: pd.DataFrame,
 
     return all_diff_df
 
+
+def prepare_train_data() -> pd.DataFrame:
+    """Готовит трейн, окторый затем используется для обучения и прогноза
+    """
+    loader = Data(RAW_DATA_FOLDER)
+    in_df = loader.get_money_in()
+    start_df = loader.get_money_start()
+    geo_df = loader.get_geo_TIDS()
+    data = in_df.merge(start_df).merge(geo_df)
+    data = data.join(extract_features_from_date(data['date']))
+    features_df = create_features(in_df)
+    targets_df = create_targets(in_df)
+
+    train_data = data.merge(features_df).merge(targets_df)
+    train_data.sort_values(by=['date', 'TID'], inplace=True)
+    train_data.set_index('date', inplace=True)
+    return train_data
+
+
+def write_train_data(train_data: pd.DataFrame):
+    """Записывает трейн в csv
+    """
+    train_data.to_csv(TRAIN_DATA_FILEPATH)
+
+
+def read_or_create_train_data(recalculate: bool=False) -> pd.DataFrame:
+    """Читает трейн из файла или создает его, если он не создан
+
+    Args:
+        recalculate (bool, optional): _description_. Defaults to False.
+
+    Returns:
+        pd.DataFrame: _description_
+    """
+
+    if not os.path.isfile(TRAIN_DATA_FILEPATH) or recalculate:
+        if recalculate:
+            warn('recalculate=True, будет собран заново')
+        else:
+            warn(f'Файл {TRAIN_DATA_FILEPATH} не найден и будет собран заново')
+
+        train_data = prepare_train_data()
+        write_train_data(train_data)
+
+    train_data = pd.read_csv(TRAIN_DATA_FILEPATH)
+    train_data['date'] = pd.to_datetime(train_data['date'], format='%Y-%m-%d')
+    return train_data.set_index('date')
+
+
+def extract_dayofyear_series(train_data: pd.DataFrame) -> pd.Series:
+    """Вытаскивает из трейна день года
+    Нужен для разбиения на трейн-валидацию-тест
+
+    Args:
+        train_data (pd.DataFrame): _description_
+
+    Returns:
+        pd.Series: _description_
+    """
+    dayofyear = pd.Series(data=train_data.index,
+                          index=train_data.index)
+
+    dayofyear = dayofyear.dt.dayofyear
+    return dayofyear
+
+
+def filter_train_by_needed_days(train_data: pd.DataFrame,
+                                needed_days: list) -> pd.DataFrame:
+    """Фильтрует трейн по нужным дням года
+    Нужен для разбиения на трейн-валидацию-тест
+
+    Args:
+        train_data (pd.DataFrame): _description_
+        needed_days (list): _description_
+
+    Returns:
+        pd.DataFrame: _description_
+    """
+    train_data = train_data.copy()
+    dayofyear = extract_dayofyear_series(train_data)
+    return train_data[dayofyear.isin(needed_days)]
+
+
 if __name__ == '__main__':
-    get_tid_income_cross_correlations(recalculate=False)
+    mydata = read_or_create_train_data(recalculate=False)
+    print(mydata.head(5))
+    print(mydata.tail(5))
+    print(mydata.shape)
