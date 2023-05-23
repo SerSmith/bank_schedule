@@ -47,6 +47,7 @@ class Data():
             df_money.drop(['TID','остаток на 31.08.2022 (входящий)'], axis=1, inplace=True)
             df_money_in = df_money.unstack(level=0)
             df_money_in = df_money_in.reset_index().rename(columns={'level_0':'date', 0:'money_in'})
+            #df_money_in['money_in'] = df_money_in['money_in'].where(df_money_in['money_in'] <= params_dict['max_money'], other=params_dict['max_money'] )
             df_money_in['date'] = pd.to_datetime(df_money_in['date'])
             self.df_money_in = df_money_in
 
