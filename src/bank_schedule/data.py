@@ -1,6 +1,7 @@
 import pandas as pd
 import os
 
+
 class Data():
     """ Класс, выкачивающий данные
 
@@ -17,13 +18,14 @@ class Data():
         self.df_geo_TIDS = None
         self.df_distance_matrix = None
         self.params_dict = None
+        self.clustered_tids = None
     
     def get_distance_matrix(self):
         if self.df_distance_matrix is None:
             folder = os.path.join(self.__data_folder, 'times v4.csv')
             self.df_distance_matrix = pd.read_csv(folder)
         return self.df_distance_matrix
-    
+
     def get_money_all(self):
         if self.df_money is None:
             money_folder = os.path.join(self.__data_folder, 'terminal_data_hackathon v4.xlsx')
@@ -50,7 +52,6 @@ class Data():
             #df_money_in['money_in'] = df_money_in['money_in'].where(df_money_in['money_in'] <= params_dict['max_money'], other=params_dict['max_money'] )
             df_money_in['date'] = pd.to_datetime(df_money_in['date'])
             self.df_money_in = df_money_in
-
         return self.df_money_in
 
 
@@ -66,3 +67,4 @@ class Data():
             df_params= pd.read_excel(params_folder)
             self.params_dict = df_params.set_index('param')['value'].to_dict()
         return self.params_dict
+    
