@@ -5,7 +5,6 @@ import pandas as pd
 
 from k_means_constrained import KMeansConstrained
 
-from sklearn.cluster import KMeans
 from bank_schedule.data import Data
 from bank_schedule import helpers
 from bank_schedule.constants import RS, RAW_DATA_FOLDER
@@ -18,16 +17,20 @@ def clusterize_atm(loader: Data,
                    size_min: int=5,
                    size_max: int=40,
                    random_state: Optional[int]=RS) -> pd.DataFrame:
-    """Распределяет банкоматы по кластерам с помощью KMeans
+    """Распределяет банкоматы по кластерам с помощью KMeansConstrained
 
     Args:
         loader (Data): объект bank_schedule.data.Data
-        n_clusters (int): _description_
-        random_state (Optional[int], optional): _description_. Defaults to RS.
+        n_clusters (int): xbckj число кластеров
+        size_min (int, optional): Минимальный размер кластера. Defaults to 5.
+        size_max (int, optional): Максимальный размер кластера. Defaults to 40.
+         n_clusters * size_max должно быть больше или равно числу точек в данных
+        random_state (Optional[int], optional): random_state. Defaults to RS.
 
     Returns:
         pd.DataFrame: датафрейм с колонками ['TID', 'label']
     """
+
     # load geodata
     geo_df = loader.get_geo_TIDS()
 
