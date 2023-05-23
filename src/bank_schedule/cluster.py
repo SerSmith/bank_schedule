@@ -3,6 +3,8 @@
 from typing import Optional
 import pandas as pd
 
+from k_means_constrained import KMeansConstrained
+
 from sklearn.cluster import KMeans
 from bank_schedule.data import Data
 from bank_schedule import helpers
@@ -13,6 +15,8 @@ LABEL_COL = 'label'
 
 def clusterize_atm(loader: Data,
                    n_clusters: int,
+                   size_min: int=5,
+                   size_max: int=40,
                    random_state: Optional[int]=RS) -> pd.DataFrame:
     """Распределяет банкоматы по кластерам с помощью KMeans
 
@@ -33,11 +37,19 @@ def clusterize_atm(loader: Data,
     coords_df = geo_df.join(coords_df)
 
     # clusterize
-    kmeans = KMeans(n_clusters=n_clusters,
-                    n_init='auto',
-                    random_state=random_state)
+    # kmeans = KMeans(n_clusters=n_clusters,
+    #                 n_init='auto',
+    #                 random_state=random_state)
 
-    labels = kmeans.fit_predict(coords_df[['x', 'y']], sample_weight=None)
+
+    kmeans = KMeansConstrained(
+        n_clusters=n_clusters,
+        size_min=size_min,
+        size_max=size_max,
+        random_state=random_state
+    )
+
+    labels = kmeans.fit_predict(coords_df[['x', 'y']])
 
     coords_df[LABEL_COL] = labels
 
@@ -46,4 +58,7 @@ def clusterize_atm(loader: Data,
 
 if __name__ == '__main__':
     my_loader = Data(RAW_DATA_FOLDER)
-    print(clusterize_atm(my_loader, n_clusters=50))
+    print(clusterize_atm(my_loader,
+                         n_clusters=50,
+                         size_min=5,
+                         size_max=40))
