@@ -197,7 +197,8 @@ class IncomeForecastLGBM():
 
     def predict(self,
                 today_date: Union[str, np.datetime64],
-                n_periods: int) -> pd.DataFrame:
+                n_periods: int,
+                income_threshold: Union[int, None]=10**6) -> pd.DataFrame:
         """_summary_
 
         Args:
@@ -237,7 +238,12 @@ class IncomeForecastLGBM():
             predictions['date'] = today_date + pd.Timedelta(days=i)
             predictions_list.append(predictions)
 
-        return pd.concat(predictions_list)[['date', 'TID', 'money_in']]
+        result = pd.concat(predictions_list)[['date', 'TID', 'money_in']]
+
+        if income_threshold is not None:
+            result[result['money_in'] > income_threshold] = income_threshold
+
+        return result
 
 
 if __name__=='__main__':
