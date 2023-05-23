@@ -14,17 +14,15 @@ LABEL_COL = 'label'
 
 def clusterize_atm(loader: Data,
                    n_clusters: int,
-                   size_min: int=5,
-                   size_max: int=40,
+                   allowed_percent=None,
                    random_state: Optional[int]=RS) -> pd.DataFrame:
     """Распределяет банкоматы по кластерам с помощью KMeansConstrained
 
     Args:
         loader (Data): объект bank_schedule.data.Data
         n_clusters (int): xbckj число кластеров
-        size_min (int, optional): Минимальный размер кластера. Defaults to 5.
-        size_max (int, optional): Максимальный размер кластера. Defaults to 40.
-         n_clusters * size_max должно быть больше или равно числу точек в данных
+        allowed_percent (float)L допустимые отклонения от среднего в размере кластерв
+        (count(tid) / n_clusters) * (size_max) должно быть больше или равно числу точек в данных
         random_state (Optional[int], optional): random_state. Defaults to RS.
 
     Returns:
@@ -33,6 +31,16 @@ def clusterize_atm(loader: Data,
 
     # load geodata
     geo_df = loader.get_geo_TIDS()
+
+    size_min = None
+    size_max = None
+
+    if allowed_percent is not None:
+        quant = geo_df["TID"].count() / n_clusters
+        size_min = round(max(quant * (1 - allowed_percent), 1))
+        size_max = round(quant * (1 + allowed_percent))
+
+
 
     # get cartesian coordinates
     coords_df = helpers.calc_cartesian_coords(lat_series=geo_df['latitude'],
@@ -62,6 +70,6 @@ def clusterize_atm(loader: Data,
 if __name__ == '__main__':
     my_loader = Data(RAW_DATA_FOLDER)
     print(clusterize_atm(my_loader,
-                         n_clusters=50,
-                         size_min=5,
-                         size_max=40))
+                         n_clusters=10,
+                         allowed_percent=0.01))
+
