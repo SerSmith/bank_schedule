@@ -10,7 +10,9 @@ from tqdm import tqdm
 import lightgbm as lgb
 
 from bank_schedule import helpers
-from bank_schedule.constants import LGBM_FOLDER
+from bank_schedule.data import Data
+from bank_schedule.constants import LGBM_FOLDER, RAW_DATA_FOLDER
+
 
 
 class SimpleRollingForecast:
@@ -241,9 +243,97 @@ class IncomeForecastLGBM():
         result = pd.concat(predictions_list)[['date', 'TID', 'money_in']]
 
         if income_threshold is not None:
-            result[result['money_in'] > income_threshold] = income_threshold
+            result.loc[result['money_in'] > income_threshold, 'money_in'] = income_threshold
 
         return result
+
+
+class ForecastHistorical():
+    """Прогнозирует известными данными
+    """
+    def __init__(self) -> None:
+        self.historical = self.__load_historical()
+
+
+    def __load_historical(self):
+        loader = Data(RAW_DATA_FOLDER)
+        historical = loader.get_money_in()
+
+        # заполняем пропуски
+        all_dates = historical['date'].unique()
+        all_tids = set(historical['TID'])
+        filler = historical.groupby('TID')['money_in'].mean().to_dict()
+
+        lost_tids = []
+        for date in all_dates:
+            tids_for_date = set(historical.loc[historical['date'] == date, 'TID'])
+            diff = all_tids.difference(tids_for_date)
+            if diff:
+                print(date, diff)
+            for lost_tid in diff:
+                lost_tids.append(
+                    pd.DataFrame(columns=['TID', 'date', 'money_in'],
+                                 data = [[lost_tid, date, filler[lost_tid]]])
+                    )
+
+        if lost_tids:
+            historical = pd.concat([historical, *lost_tids], ignore_index=True)
+            historical = historical.sort_values(['TID', 'date'])
+
+        historical['money_in'] = historical['money_in'].fillna(0)
+
+        return historical
+
+
+    def __predict_by_mean(self,
+                          today_date: Union[str, np.datetime64],
+                          n_periods: int,):
+        """Возвращает среднее по всем историческим данным
+
+        Args:
+            today_date (Union[str, np.datetime64]): _description_
+            n_periods (int): _description_
+        """
+
+        result = self.historical.groupby('TID')['money_in'].mean()
+        result = result.reset_index()
+        result['date'] = today_date
+        return result
+
+
+    def predict(self,
+                today_date: Union[str, np.datetime64],
+                n_periods: int,
+                income_threshold: Union[int, None]=10**6):
+        """Прогнозируе известными данными
+
+        Args:
+            today_date (Union[str, np.datetime64]): _description_
+            n_periods (int): _description_
+            income_threshold (Union[int, None], optional): _description_. Defaults to 10**6.
+
+        Raises:
+            ValueError: _description_
+        """
+        today_date = pd.to_datetime(today_date)
+
+        forecast_list = []
+        for i in range(1, n_periods + 1):
+
+            next_date = today_date + pd.Timedelta(days=i)
+            cond = self.historical['date'] == next_date
+            result = self.historical[cond].copy()
+
+            if result.empty:
+                warn(f'Дата {next_date} не найдена в исторических данных, прогнозируем средним по TID')
+                result = self.__predict_by_mean(next_date, i)
+
+            if income_threshold is not None:
+                result.loc[result['money_in'] > income_threshold, 'money_in'] = income_threshold
+
+            forecast_list.append(result.copy())
+
+        return pd.concat(forecast_list, ignore_index=True)
 
 
 if __name__=='__main__':
