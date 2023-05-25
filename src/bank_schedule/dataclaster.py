@@ -22,7 +22,7 @@ class DataClaster(Data):
 
         super().get_money_in()
 
-        if cluster is None:
+        if cluster_num is None:
             out = self.df_money_in
         else:
             tids_chosen = self.get_tids_by_claster(cluster_num)
