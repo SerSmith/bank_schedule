@@ -282,6 +282,18 @@ def calc_inc(opt):
     solution_pd = solution_pd[['TID', 'inc']]
     return solution_pd
 
+def find_TID_for_inc(money_start, days_from_inc, data, days_for_inc_force):
+    params_dict = data.get_params_dict()
+    list_TID_max_money = list(money_start[money_start['money'] > params_dict['max_money']].TID.unique()) 
+
+    list_TID_from_inc = list(days_from_inc[days_from_inc.days_from_inc.isin(days_for_inc_force)].TID.unique())
+    list_TID = list(set(list_TID_max_money) | set(list_TID_from_inc))
+    return list_TID
+
+def find_TID_not_inc(days_from_inc, days_for_not_inc):
+    list_TID_not_inc = list(days_from_inc[days_from_inc.days_from_inc.isin(days_for_not_inc)].TID.unique())
+    return list_TID_not_inc
+
 
 
 
