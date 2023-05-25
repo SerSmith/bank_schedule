@@ -20,7 +20,7 @@ class OptModel:
         self.data = data
 
 
-    def add_basic_conceptions(self, money_start, days_from_inc, date_from, date_to, cluster):
+    def add_basic_conceptions(self, tids, money_start, days_from_inc, date_from, date_to, cluster):
 
         money_in = self.data.get_money_in(cluster)
 
@@ -32,7 +32,7 @@ class OptModel:
 
         params = self.data.get_params_dict()
 
-        self.model.TIDS = pyo.Set(initialize=money_in['TID'].unique())
+        self.model.TIDS = pyo.Set(initialize=tids)
 
         self.model.DATES = pyo.Set(initialize=money_in['date'].unique())
 
@@ -56,9 +56,9 @@ class OptModel:
 
         self.model.TIDS_with_null = pyo.Set(initialize=np.append(money_in['TID'].unique(), -1))
 
-        self.model.MINUTES_CARS = (datetime.combine(date.today(), params['day_end'] ) - \
-                            datetime.combine(date.today(), params['day_start']))\
-                            .total_seconds() / 60
+        self.model.MINUTES_CARS = (datetime.combine(date.today(), params['day_end']) - \
+                                   datetime.combine(date.today(), params['day_start']))\
+                                   .total_seconds() / 60
 
         distance_matrix = self.data.get_distance_matrix(cluster)
         self.model.distance_matrix_dict = distance_matrix.set_index(["Origin_tid",	"Destination_tid"]).to_dict()['Total_Time']
@@ -73,7 +73,7 @@ class OptModel:
 
         weights = self.calc_weights(money_start, days_from_inc, params)
 
-        self.model.weights_dict = weights.set['TID'].to_dict()["weight"]
+        self.model.weights_dict = weights.set_index('TID').to_dict()["weight"]
 
 
         # Переменные
@@ -258,12 +258,20 @@ class OptModel:
         return weights[["TID", 'weight']]
 
 
+    def get_top_tids(self, quant, money_start, days_from_inc, data):
+        params = data.get_params_dict()
+        weights = self.calc_weights(money_start, days_from_inc, params)
+        return weights.sort_values('weight')['TID'].head(quant).to_list()
+
+
 
 def update_money_start(money_start, money_in_full, now_date, incs):
 
     money_in = money_in_full.loc[money_in_full["date"].apply(lambda x: x.strftime('%Y-%m-%d')) == str(now_date), ["TID",	"money_in"]]
 
-    all_actions = money_start.merge(money_in, on=["TID"]).merge(incs, on=["TID"])
+    all_actions = money_start.merge(money_in, on=["TID"], how='left').merge(incs, on=["TID"], how='left')
+
+    all_actions = all_actions.fillna(0)
 
     all_actions["new_money_start"] = all_actions["money"] * (1 - all_actions["inc"]) + all_actions["money_in"]
 
@@ -273,8 +281,9 @@ def update_money_start(money_start, money_in_full, now_date, incs):
 
 def update_days_from_inc(days_from_inc, incs):
 
-    out = days_from_inc.merge(incs, on=["TID"])
+    out = days_from_inc.merge(incs, on=["TID"], how='left')
 
+    out = out.fillna(0)
     
     out['days_from_inc'] = out['days_from_inc'] * (1 - out["inc"]) + 1
 
@@ -292,7 +301,10 @@ def calc_inc(opt):
     return solution_pd
 
 
-def find_TID_for_inc(money_start, data,  days_from_inc, days_for_inc_force = [13, 14]):
+def find_TID_for_inc(money_start, days_from_inc, data, days_for_inc_force=None):
+    if days_for_inc_force is None:
+        days_for_inc_force = [14]
+
     params_dict = data.get_params_dict()
     list_TID_max_money = list(money_start[money_start['money'] > params_dict['max_money'] ].TID.unique()) 
 
@@ -305,12 +317,14 @@ def find_TID_not_inc(days_from_inc, days_for_not_inc = []):
     return list_TID_not_inc
 
 
-def presolve(data, date_from, day_count, cluster_num):
+
+
+def presolve(data, date_from, day_count, top_tids_quant, cluster_num):
 
     models = []
     results = []
 
-    money_start = data.get_money_start()
+    money_start = data.get_money_start(cluster_num)
     money_in = data.get_money_in(cluster_num)
 
     
@@ -326,16 +340,20 @@ def presolve(data, date_from, day_count, cluster_num):
 
         optim = OptModel(data)
 
-        optim.add_basic_conceptions(money_start, days_from_inc, now_date, now_date, cluster_num)
-        optim.add_gready_concepts()        
-        list_TID_to_inc = find_TID_for_inc(money_start, data, days_from_inc) #, days_for_inc_force)
-        list_TID_not_inc = find_TID_not_inc(days_from_inc) #, days_for_not_inc)
-        optim.fixed_some_TID(list_TID_to_inc, list_TID_not_inc) 
+        tids = set(optim.get_top_tids(top_tids_quant, money_start, days_from_inc, data))
+
+        tids_have_to_visit = find_TID_for_inc(money_start, days_from_inc, data)
+
+        tids = tids.union(set(tids_have_to_visit))
+        # optim.fixed_some_TID(list_TID_to_inc, list_TID_not_inc) 
+
+        optim.add_basic_conceptions(list(tids), money_start, days_from_inc, now_date, now_date, cluster_num)
+        optim.add_gready_concepts()
 
         optim_options = {
             'ratioGap': 0.01, 
-            'sec': 600,
-            # 'threads': -1
+            'sec': 50,
+            'threads': -1
             }
 
         model, result = optim.solve(optim_options)
@@ -357,7 +375,7 @@ if __name__ == "__main__":
     data.run_cluster(0.1, 5)
 
 
-    # presolved_models, presolved_results = presolve(data, date(2022, 11, 1), 15, cluster_num)
+    presolved_models, presolved_results = presolve(data, date(2022, 11, 1), 15, cluster_num)
 
 
 
