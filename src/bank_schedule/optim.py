@@ -334,7 +334,7 @@ if __name__ == "__main__":
     data.run_cluster(0.1, 5)
 
 
-    # presolved_models, presolved_results = presolve(data, date(2022, 11, 1), 15, cluster_num)
+    presolved_models, presolved_results = presolve(data, date(2022, 11, 1), 15, cluster_num)
 
 
 
