@@ -17,10 +17,12 @@ def condition_max_days_inc(df_opt_result, df_money_in, data):
 
 
 
-def check_over_balance(df_opt_result, df_money_in, df_money_start, data):
+def check_over_balance(df_opt_result,  data):
     """
     Функция принимает результаты оптимизации и выдает датафрейм с остатками на счетах в банкоматах на каждый день
     """
+    df_money_start= data.get_money_start()
+    df_money_in = data.get_money_in()
     params_dict = data.get_params_dict()
     df_money = pd.DataFrame(index=df_money_in['TID'].unique())
     for date in df_money_in.date.unique():
@@ -47,13 +49,18 @@ def check_over_balance(df_opt_result, df_money_in, df_money_start, data):
     dict_num_to_date= { v:k for (v, k) in enumerate(df_money_sum.columns)}
 
     # обработаем инкасации
-    list_date = df_opt_result.date.unique()
-    list_date.sort()
+    list_date = np.sort(df_opt_result.date.unique())
+
     for day in tqdm(list_date):
         day = pd.to_datetime(day)
         date_before = dict_num_to_date[dict_date_to_num[day]-1]
         for j in range(dict_date_to_num[day], df_money_sum.shape[1]):
             df_money_sum.loc[list(df_opt_result[df_opt_result.date==day]['TID']), dict_num_to_date[j]] -= df_money_sum.loc[list(df_opt_result[df_opt_result.date==day]['TID']), date_before]
+
+    list_date = df_opt_result.date.unique()
+    for day in tqdm(list_date):
+        day = pd.to_datetime(day)
+        df_money_sum.loc[list(df_opt_result[df_opt_result.date==day]['TID']), day] = 0
 
     df_money_sum.drop([date_minus_1], axis=1, inplace=True)
     assert sum((df_money_sum > params_dict['max_money']).sum()) == 0, 'alarm, max_money in ATM is too big'
