@@ -155,6 +155,15 @@ class OptModel:
         return self.model
 
 
+    def fixed_some_TID(self, list_TID_to_inc, list_TID_not_inc):
+
+        for TID in list_TID_to_inc:
+            self.model.money_inc[TID, 0].fix(1)
+
+
+        for TID in list_TID_not_inc:
+            self.model.money_inc[TID, 0].fix(0)
+
 
     def add_gready_concepts(self):
 
@@ -282,19 +291,18 @@ def calc_inc(opt):
     solution_pd = solution_pd[['TID', 'inc']]
     return solution_pd
 
-def find_TID_for_inc(money_start, days_from_inc, data, days_for_inc_force):
+
+def find_TID_for_inc(money_start, data,  days_from_inc, days_for_inc_force = [13, 14]):
     params_dict = data.get_params_dict()
-    list_TID_max_money = list(money_start[money_start['money'] > params_dict['max_money']].TID.unique()) 
+    list_TID_max_money = list(money_start[money_start['money'] > params_dict['max_money'] ].TID.unique()) 
 
     list_TID_from_inc = list(days_from_inc[days_from_inc.days_from_inc.isin(days_for_inc_force)].TID.unique())
     list_TID = list(set(list_TID_max_money) | set(list_TID_from_inc))
     return list_TID
 
-def find_TID_not_inc(days_from_inc, days_for_not_inc):
+def find_TID_not_inc(days_from_inc, days_for_not_inc = []):
     list_TID_not_inc = list(days_from_inc[days_from_inc.days_from_inc.isin(days_for_not_inc)].TID.unique())
     return list_TID_not_inc
-
-
 
 
 def presolve(data, date_from, day_count, cluster_num):
@@ -319,7 +327,10 @@ def presolve(data, date_from, day_count, cluster_num):
         optim = OptModel(data)
 
         optim.add_basic_conceptions(money_start, days_from_inc, now_date, now_date, cluster_num)
-        optim.add_gready_concepts()
+        optim.add_gready_concepts()        
+        list_TID_to_inc = find_TID_for_inc(money_start, data, days_from_inc) #, days_for_inc_force)
+        list_TID_not_inc = find_TID_not_inc(days_from_inc) #, days_for_not_inc)
+        optim.fixed_some_TID(list_TID_to_inc, list_TID_not_inc) 
 
         optim_options = {
             'ratioGap': 0.01, 
