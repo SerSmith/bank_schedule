@@ -197,6 +197,24 @@ class IncomeForecastLGBM():
         return models
 
 
+    def __predict_by_mean(self,
+                          today_date: Union[str, np.datetime64],
+                          n_periods: int) -> pd.DataFrame:
+        """Возвращает среднее по всем историческим данным
+
+        Args:
+            today_date (Union[str, np.datetime64]): _description_
+            n_periods (int): _description_
+        """
+        predictions_list = []
+        for i in range(1, n_periods + 1):
+            result = self.train.groupby('TID')['money_in'].mean()
+            result = result.reset_index()
+            result['date'] = today_date + pd.Timedelta(days=i)
+            predictions_list.append(result)
+        return pd.concat(predictions_list)[['date', 'TID', 'money_in']]
+
+
     def predict(self,
                 today_date: Union[str, np.datetime64],
                 n_periods: int,
@@ -212,16 +230,19 @@ class IncomeForecastLGBM():
         """
         today_date = pd.to_datetime(today_date)
         cond = self.train.index == today_date
-        if cond.sum() == 0:
-            raise ValueError(f'Дата {today_date} не найдена в данных')
 
         slice_df = self.train[cond]
+
+        if slice_df.empty:
+            warn(f'Дата {today_date} не найдена в данных, прогнозируем средним по TID')
+            return self.__predict_by_mean(today_date, n_periods)
+
         predictions_list = []
 
         for i in range(1, n_periods + 1):
 
             if i not in self.models:
-                warn('Горизонт прогноза слишком большой')
+                warn('Горизонт прогноза слишком большой, прогнозируем средним по TID')
                 pred_vals = []
 
                 for _, mdl in self.models.items():
@@ -286,8 +307,7 @@ class ForecastHistorical():
 
 
     def __predict_by_mean(self,
-                          today_date: Union[str, np.datetime64],
-                          n_periods: int,):
+                          today_date: Union[str, np.datetime64]):
         """Возвращает среднее по всем историческим данным
 
         Args:
@@ -298,7 +318,7 @@ class ForecastHistorical():
         result = self.historical.groupby('TID')['money_in'].mean()
         result = result.reset_index()
         result['date'] = today_date
-        return result
+        return result[['date', 'TID', 'money_in']]
 
 
     def predict(self,
@@ -326,14 +346,14 @@ class ForecastHistorical():
 
             if result.empty:
                 warn(f'Дата {next_date} не найдена в исторических данных, прогнозируем средним по TID')
-                result = self.__predict_by_mean(next_date, i)
+                result = self.__predict_by_mean(next_date)
 
             if income_threshold is not None:
                 result.loc[result['money_in'] > income_threshold, 'money_in'] = income_threshold
 
             forecast_list.append(result.copy())
 
-        return pd.concat(forecast_list, ignore_index=True)
+        return pd.concat(forecast_list, ignore_index=True)[['date', 'TID', 'money_in']]
 
 
 if __name__=='__main__':
