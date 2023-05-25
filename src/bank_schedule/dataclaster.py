@@ -38,5 +38,14 @@ class DataClaster(Data):
 
         assert self.clustered_tids is not None, "run run_cluster first"
         return self.clustered_tids[self.clustered_tids["label"] == cluster_num]['TID'].unique()
-        
-        
+    
+    def get_money_start(self, cluster_num)
+        super().get_money_start()
+
+        if cluster_num is None:
+            out = self.df_money_start
+        else:
+            tids_chosen = self.get_tids_by_claster(cluster_num)
+            out = self.df_money_start[self.df_money_start['TID'].isin(tids_chosen)]
+
+        return out
