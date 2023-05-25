@@ -333,7 +333,7 @@ def presolve(data, date_from, day_count, top_tids_quant, cluster_num):
 
         tids_have_to_visit = find_TID_for_inc(money_start, days_from_inc, data)
 
-        tids = tids.union()
+        tids = tids.union(set(tids_have_to_visit))
 
         optim.add_basic_conceptions(list(tids), money_start, days_from_inc, now_date, now_date, cluster_num)
         optim.add_gready_concepts()
