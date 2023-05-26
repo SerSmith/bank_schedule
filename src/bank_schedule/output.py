@@ -44,13 +44,18 @@ from datetime import datetime, timedelta
 #     df_money_sum = df_money_sum.where(condition, other = params_dict['max_money'])
 #     return df_money_sum
 
-def find_ATM_balance_evening(df_opt_result, data):
+def find_ATM_balance_evening(df_opt_result, data, list_TID_claster = None):
     """
     Функция принимает результаты оптимизации и выдает датафрейм с остатками на счетах в банкоматах на каждый день
     """
     params_dict = data.get_params_dict()
     df_money_in = data.get_money_in()
     df_money_start = data.get_money_start()
+
+    if list_TID_claster is not None:
+        df_money_in = df_money_in[df_money_in.TID.isin(list_TID_claster)]
+        df_money_start = df_money_start[df_money_start.TID.isin(list_TID_claster)]
+
     df_money = pd.DataFrame(index=df_money_in['TID'].unique())
     for date in df_money_in.date.unique():
         df_money[date] = df_money_in[df_money_in.date==date].set_index('TID')['money_in']
@@ -71,7 +76,7 @@ def find_ATM_balance_evening(df_opt_result, data):
     df_money_sum = df_money_sum[df_money_sum.columns.sort_values()]
 
 
-    unique_date = pd.to_datetime(df_opt_result.date.unique())     #уникальные дни инкасации
+    #unique_date = pd.to_datetime(df_opt_result.date.unique())     #уникальные дни инкасации
     dict_date_to_num = { k:v for (v, k) in enumerate(df_money_sum.columns)}
     dict_num_to_date= { v:k for (v, k) in enumerate(df_money_sum.columns)}
 
@@ -91,14 +96,21 @@ def find_ATM_balance_evening(df_opt_result, data):
     return df_money_sum
 
 
-def find_cost_inc(df_money_sum, df_opt_result, df_money_start, params_dict):
+def find_cost_inc(df_money_sum, df_opt_result, data, list_TID_claster = None):
     """
     Функция принимающая на вход остатки в банкоматах и результат оптимизации 
     и выдающая стоимость инкасаций, которые мы нашли в результате оптимизаций
     """
+    df_money_start = data.get_money_start()
+    params_dict = data.get_params_dict()
+
+    if list_TID_claster is not None:
+        df_money_start = df_money_start[df_money_start.TID.isin(list_TID_claster)]
+
+
     date_start = df_money_sum.columns.min()
     date_minus_1  = date_start - timedelta(days=1)
-    df_money_sum[date_minus_1] = df_money_start['money']
+    df_money_sum[date_minus_1] = df_money_start['money'].values()
     df_money_sum = df_money_sum[df_money_sum.columns.sort_values()]
 
 
@@ -116,38 +128,53 @@ def find_cost_inc(df_money_sum, df_opt_result, df_money_start, params_dict):
 
     df_cost_inc = df_cost_inc.fillna(0)
 
-    #condition = (df_cost_inc >= params_dict['cost_inc_min']) | (df_cost_inc == 0)
-    # df_cost_inc = df_cost_inc.where(condition, other = params_dict['cost_inc_min'])
+    condition = (df_cost_inc >= params_dict['cost_inc_min']) | (df_cost_inc == 0)
+    df_cost_inc = df_cost_inc.where(condition, other = params_dict['cost_inc_min'])
     return df_cost_inc
 
-def find_sum_fond( df_opt_result,  data):
+def find_sum_fond(df_opt_result,  data, list_TID_claster = None):
     df_money_in = data.get_money_in()
     df_money_start = data.get_money_start()
+    if list_TID_claster is not None:
+        df_money_in = df_money_in[df_money_in.TID.isin(list_TID_claster)]
+        df_money_start = df_money_start[df_money_start.TID.isin(list_TID_claster)]
+
     params_dict = data.get_params_dict()
     "Считаем стоимость фондирования (смотрим от суммы на утро после инкасирования)"
-    df_money_sum = find_ATM_balance_morning(df_opt_result, data)
+    df_money_sum = find_ATM_balance_morning(df_opt_result, data, list_TID_claster)
     df_fond = df_money_sum * params_dict['overnight'] / 100 / 365
     return df_fond
 
-def find_all_cost(df_money_sum, df_opt_result,data ):
+def find_all_cost(df_money_sum, df_opt_result,data, list_TID_claster = None ):
     """
     """
     params_dict = data.get_params_dict()
-    df_money_start = data.get_money_start
-    df_cost_inc = find_cost_inc(df_money_sum, df_opt_result, df_money_start, params_dict)
-    df_fond = find_sum_fond(df_money_sum, data)
-    cost_auto = params_dict['price_car'] * len(df_opt_result.auto.unique()) * ((df_opt_result.date.max() - df_opt_result.date.min() ).days + 1 ) # или по датам лучше переписать на df_money_in ?
-    all_cost = sum(df_fond.add(df_cost_inc, fill_value=0).sum()) + cost_auto
-    return all_cost
+    df_money_start = data.get_money_start()
+    if list_TID_claster is not None:
+        df_money_start = df_money_start[df_money_start.TID.isin(list_TID_claster)]
+    df_cost_inc = find_cost_inc(df_money_sum, df_opt_result, data, list_TID_claster)
+    df_fond = find_sum_fond(df_opt_result, data, list_TID_claster)
+    cost_auto = pd.DataFrame([params_dict['price_car'] * len(df_opt_result.auto.unique())] * ((df_fond.columns.max() - df_fond.columns.min() ).days + 1 ), index = df_fond.columns) # или по датам лучше переписать на df_money_in ?    all_cost = sum(df_fond.add(df_cost_inc, fill_value=0).sum()) + cost_auto
 
-def find_ATM_balance_morning(df_opt_result,  data):
+    df_cost_inc_by_days = df_cost_inc.sum()
+    df_fond_by_days = df_fond.sum()
+    all_cost_by_days = pd.concat([df_cost_inc_by_days, df_fond_by_days, cost_auto], axis=1)
+    all_cost_by_days.columns = ['Затраты на инкасацию','Затраты на фондирование','Затраты на машины']
+    return all_cost_by_days, all_cost
+
+def find_ATM_balance_morning(df_opt_result,  data, list_TID_claster=None):
     "Считаем баланыс банкоматов на утро после инкасации"
     df_money_in = data.get_money_in()
     df_money_start = data.get_money_start()
+
+    if list_TID_claster is not None:
+        df_money_in = df_money_in[df_money_in.TID.isin(list_TID_claster)]
+        df_money_start = df_money_start[df_money_start.TID.isin(list_TID_claster)]
+
     df_money = pd.DataFrame(index=df_money_in['TID'].unique())
     df_money_start = df_money_start.set_index('TID').copy()
     df_money[df_money_in.date.min()] = 0
-    for date in df_money_in.date.unique():
+    for date in df_money_in.date.unique()[:-1]:
         df_money[date+timedelta(days=1)] = df_money_in[df_money_in.date==date].set_index('TID')['money_in']
 
     df_money.columns = pd.to_datetime(df_money.columns)
