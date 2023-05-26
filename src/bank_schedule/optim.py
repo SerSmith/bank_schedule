@@ -20,7 +20,7 @@ class OptModel:
         self.data = data
 
 
-    def add_basic_conceptions(self, tids, money_start, days_from_inc, date_from, date_to, cluster):
+    def  add_basic_conceptions(self, tids, money_start, days_from_inc, date_from, date_to, cluster):
 
         money_in = self.data.get_money_in(cluster)
 
@@ -54,7 +54,7 @@ class OptModel:
 
         self.model.M = params["M"]
 
-        self.model.TIDS_with_null = pyo.Set(initialize=np.append(money_in['TID'].unique(), -1))
+        self.model.TIDS_with_null = pyo.Set(initialize=np.append(tids, -1))
 
         self.model.MINUTES_CARS = (datetime.combine(date.today(), params['day_end']) - \
                                    datetime.combine(date.today(), params['day_start']))\
@@ -92,10 +92,7 @@ class OptModel:
         #     return model.money_inside_TID[tid, date] * model.COST_INC_PERS -  model.money_inc[tid, date] * M <= model.costs_for_inc[tid, date]
         # model.con_costs_for_inc_2 = pyo.Constraint(model.TIDS, model.DATES, rule=con_costs_for_inc_2 )
 
-        #затраты на инкассацию
-        def costs_for_inc(model, tid, date):
-            return model.money_inc[tid, date] * model.COST_INC_MIN
-        self.model.costs_for_inc = pyo.Expression(self.model.TIDS, self.model.DATES, rule=costs_for_inc )
+ 
 
 
         #Последовательность маршрута
@@ -107,7 +104,7 @@ class OptModel:
 
         def con_route_2(model, tid, date):
             return quicksum([model.route[tid2, tid, date] for tid2 in model.TIDS_with_null if tid != tid2]) == model.money_inc[tid, date]
-        self.model.con_route_2 = pyo.Constraint(self.model.TIDS, self.model.DATES, rule=con_route_2 )
+        self.model.con_route_2 = pyo.Constraint(self.model.TIDS, self.model.DATES, rule=con_route_2)
 
         def con_route_3(model, date):
             return quicksum([model.route[tid2, -1, date] for tid2 in model.TIDS]) == 1
@@ -135,7 +132,7 @@ class OptModel:
 
 
         def con_max_inc(model, date):
-            return quicksum([model.money_inc[tid, date] for tid in model.TIDS]) <= 30
+            return quicksum([model.money_inc[tid, date] for tid in model.TIDS]) <= 23
         self.model.con_max_inc = pyo.Constraint(self.model.DATES, rule=con_max_inc)
 
     
@@ -176,6 +173,11 @@ class OptModel:
 
 
     def add_full_optim_concepts(self):
+
+        #затраты на инкассацию
+        def costs_for_inc(model, tid, date):
+            return model.money_inc[tid, date] * model.COST_INC_MIN
+        self.model.costs_for_inc = pyo.Expression(self.model.TIDS, self.model.DATES, rule=costs_for_inc )
 
         self.model.money_inside_TID = pyo.Var(self.model.TIDS, self.model.DATES,  within=pyo.NonNegativeReals, initialize=0 )
 
@@ -218,9 +220,6 @@ class OptModel:
 
 
 
-
-
-
         self.model.OBJ = pyo.Objective(expr=
                                     # quicksum([model.money_inside_TID[tid, date] for tid, date in itertools.product(list(model.TIDS), list(model.DATES)) ]) +
                                     # quicksum([model.days_from_inc[tid, date] for tid, date in itertools.product(list(model.TIDS), list(model.DATES)) ]) +
@@ -245,7 +244,7 @@ class OptModel:
         for key in optim_options:
             opt.options[key] = optim_options[key]
 
-        results = opt.solve(self.model)
+        results = opt.solve(self.model, tee=False)
 
         print(results['Problem'])
         print(results['Solver'])
@@ -254,14 +253,15 @@ class OptModel:
     @staticmethod
     def calc_weights(money_start, days_from_inc, params):
         weights = money_start.merge(days_from_inc, on='TID')
-        weights['weight'] = weights["money"] + weights["days_from_inc"] ** params["pow_weight"]
+        # weights['weight'] = weights["money"] + weights["days_from_inc"] ** params["pow_weight"]
+        weights['weight'] = weights["money"] + 100000 * weights["days_from_inc"] ** 2
         return weights[["TID", 'weight']]
 
 
     def get_top_tids(self, quant, money_start, days_from_inc, data):
         params = data.get_params_dict()
         weights = self.calc_weights(money_start, days_from_inc, params)
-        return weights.sort_values('weight')['TID'].head(quant).to_list()
+        return weights.sort_values('weight', ascending=False)['TID'].head(quant).to_list()
 
 
 
@@ -285,7 +285,7 @@ def update_days_from_inc(days_from_inc, incs):
 
     out = out.fillna(0)
     
-    out['days_from_inc'] = out['days_from_inc'] * (1 - out["inc"]) + 1
+    out['days_from_inc'] = (out['days_from_inc'] + 1) * (1 - out["inc"])
 
     return out[["TID", 'days_from_inc']]
 
@@ -303,7 +303,7 @@ def calc_inc(opt):
 
 def find_TID_for_inc(money_start, days_from_inc, data, days_for_inc_force=None):
     if days_for_inc_force is None:
-        days_for_inc_force = [14]
+        days_for_inc_force = [13]
 
     params_dict = data.get_params_dict()
     list_TID_max_money = list(money_start[money_start['money'] > params_dict['max_money'] ].TID.unique()) 
@@ -344,23 +344,33 @@ def presolve(data, date_from, day_count, top_tids_quant, cluster_num):
 
         tids_have_to_visit = find_TID_for_inc(money_start, days_from_inc, data)
 
+        print(f"Обяззательных постоматов {len(tids_have_to_visit)}")
+        print(f"Всего оптимизируемых банкоматов {len(tids)}")
+
         tids = tids.union(set(tids_have_to_visit))
-        # optim.fixed_some_TID(list_TID_to_inc, list_TID_not_inc) 
+
 
         optim.add_basic_conceptions(list(tids), money_start, days_from_inc, now_date, now_date, cluster_num)
         optim.add_gready_concepts()
+        optim.fixed_some_TID(tids_have_to_visit, []) 
 
         optim_options = {
-            'ratioGap': 0.01, 
-            'sec': 50,
-            'threads': -1
+            'ratioGap': 0.15, 
+            'sec': 300,
+            'threads': 8,
+            "heuristics": "on",
+            "autoScale": 1,
+            "feaspump": "on",
+            "greedyHeuristic": "on"
             }
 
         model, result = optim.solve(optim_options)
-        models.append(model)
-        results.append(result)
-
+        models.append([model, now_date])
         incs = calc_inc(model)
+
+        results.append((result, incs, money_start, days_from_inc))
+
+
         money_start = update_money_start(money_start, money_in, now_date, incs)
         days_from_inc = update_days_from_inc(days_from_inc, incs)
 
@@ -376,10 +386,6 @@ if __name__ == "__main__":
 
 
     presolved_models, presolved_results = presolve(data, date(2022, 11, 1), 15, cluster_num)
-
-
-
-
 
 
 
