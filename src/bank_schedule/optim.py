@@ -132,7 +132,7 @@ class OptModel:
 
 
         def con_max_inc(model, date):
-            return quicksum([model.money_inc[tid, date] for tid in model.TIDS]) <= 23
+            return quicksum([model.money_inc[tid, date] for tid in model.TIDS]) <= 26
         self.model.con_max_inc = pyo.Constraint(self.model.DATES, rule=con_max_inc)
 
     
@@ -244,7 +244,7 @@ class OptModel:
         for key in optim_options:
             opt.options[key] = optim_options[key]
 
-        results = opt.solve(self.model, tee=False)
+        results = opt.solve(self.model, tee=True)
 
         print(results['Problem'])
         print(results['Solver'])
@@ -303,7 +303,7 @@ def calc_inc(opt):
 
 def find_TID_for_inc(money_start, days_from_inc, data, days_for_inc_force=None):
     if days_for_inc_force is None:
-        days_for_inc_force = [13]
+        days_for_inc_force = [14]
 
     params_dict = data.get_params_dict()
     list_TID_max_money = list(money_start[money_start['money'] > params_dict['max_money'] ].TID.unique()) 
@@ -344,22 +344,23 @@ def presolve(data, date_from, day_count, top_tids_quant, cluster_num):
 
         tids_have_to_visit = find_TID_for_inc(money_start, days_from_inc, data)
 
-        print(f"Обяззательных постоматов {len(tids_have_to_visit)}")
-        print(f"Всего оптимизируемых банкоматов {len(tids)}")
 
         tids = tids.union(set(tids_have_to_visit))
+
+        print(f"Обяззательных постоматов {len(tids_have_to_visit)}: {tids_have_to_visit}")
+        print(f"Всего оптимизируемых банкоматов {len(tids)}")
 
 
         optim.add_basic_conceptions(list(tids), money_start, days_from_inc, now_date, now_date, cluster_num)
         optim.add_gready_concepts()
-        optim.fixed_some_TID(tids_have_to_visit, []) 
+        optim.fixed_some_TID(tids_have_to_visit, [])
 
         optim_options = {
             'ratioGap': 0.15, 
             'sec': 300,
             'threads': 8,
             "heuristics": "on",
-            "autoScale": 1,
+            "autoScale": 'on',
             "feaspump": "on",
             "greedyHeuristic": "on"
             }
