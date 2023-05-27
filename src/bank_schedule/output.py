@@ -110,7 +110,7 @@ def find_cost_inc(df_money_sum, df_opt_result, data, list_TID_claster = None):
 
     date_start = df_money_sum.columns.min()
     date_minus_1  = date_start - timedelta(days=1)
-    df_money_sum[date_minus_1] = df_money_start['money'].values()
+    df_money_sum[date_minus_1] = list(df_money_start['money'])
     df_money_sum = df_money_sum[df_money_sum.columns.sort_values()]
 
 
