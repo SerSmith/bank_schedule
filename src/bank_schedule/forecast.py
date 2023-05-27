@@ -218,7 +218,7 @@ class IncomeForecastLGBM():
     def predict(self,
                 today_date: Union[str, np.datetime64],
                 n_periods: int,
-                income_threshold: Union[int, None]=10**6) -> pd.DataFrame:
+                income_threshold: Union[int, None]=None) -> pd.DataFrame:
         """_summary_
 
         Args:
@@ -267,6 +267,22 @@ class IncomeForecastLGBM():
             result.loc[result['money_in'] > income_threshold, 'money_in'] = income_threshold
 
         return result
+
+
+    def predict_cumsum(self,
+                       today_date: Union[str, np.datetime64],
+                       n_periods: int,
+                       income_threshold: Union[int, None]=None):
+        """_summary_
+
+        Args:
+            today_date (Union[str, np.datetime64]): _description_
+            n_periods (int): _description_
+            income_threshold (Union[int, None], optional): _description_. Defaults to None.
+        """
+        predicts = self.predict(today_date, n_periods, income_threshold)
+        predicts['money_in_cumsum'] = predicts.groupby(['TID'])['money_in'].cumsum()
+        return predicts
 
 
 class ForecastHistorical():
