@@ -160,7 +160,7 @@ def find_all_cost(df_money_sum, df_opt_result,data, list_TID_claster = None ):
     df_fond_by_days = df_fond.sum()
     all_cost_by_days = pd.concat([df_cost_inc_by_days, df_fond_by_days, cost_auto], axis=1)
     all_cost_by_days.columns = ['Затраты на инкасацию','Затраты на фондирование','Затраты на машины']
-    return all_cost_by_days, all_cost
+    return all_cost_by_days
 
 def find_ATM_balance_morning(df_opt_result,  data, list_TID_claster=None):
     "Считаем баланыс банкоматов на утро после инкасации"

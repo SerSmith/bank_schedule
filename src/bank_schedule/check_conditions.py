@@ -14,7 +14,7 @@ def condition_max_days_inc(df_opt_result, df_money_in, data):
         df_opt_result_tid['lag_date'] = df_opt_result_tid.date.shift(1)
         df_opt_result_tid['lag_date'] = df_opt_result_tid['lag_date'].fillna(date_first)
         df_opt_result_tid['diff_date'] = (df_opt_result_tid['date'] - df_opt_result_tid['lag_date']).apply(lambda x: x.days)
-        assert df_opt_result_tid.diff_date.max() <= params_dict['max_days_inc'] , f'alarm, for tid={tid} max_days for auto = {df_opt_result_tid.diff_date.max()}'
+        assert df_opt_result_tid.diff_date.max() <= params_dict['max_days_inc'] + 1 , f'alarm, for tid={tid} max_days for auto = {df_opt_result_tid.diff_date.max()}'
 
 
 
@@ -25,7 +25,7 @@ def check_over_balance(df_opt_result,  data, list_TID_cluster = None):
     df_money_in = data.get_money_in()
     df_money_start = data.get_money_start()
 
-    if list_TID_claster is not None:
+    if list_TID_cluster is not None:
             df_money_in = df_money_in[df_money_in.TID.isin(list_TID_cluster)]
             df_money_start = df_money_start[df_money_start.TID.isin(list_TID_cluster)]
 

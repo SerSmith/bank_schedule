@@ -1,6 +1,6 @@
 
 import pyomo.environ as pyo
-from pyomo.opt import SolverFactory
+from pyomo.opt import SolverFactory, TerminationCondition
 
 from pyomo.core.util import quicksum
 
@@ -160,7 +160,7 @@ class OptModel:
 
         for TID in list_TID_not_inc:
             self.model.money_inc[TID, 0].fix(0)
-
+        
 
     def add_gready_concepts(self):
 
@@ -244,7 +244,7 @@ class OptModel:
         for key in optim_options:
             opt.options[key] = optim_options[key]
 
-        results = opt.solve(self.model, tee=True)
+        results = opt.solve(self.model, tee=False)
 
         print(results['Problem'])
         print(results['Solver'])
@@ -319,7 +319,7 @@ def find_TID_not_inc(days_from_inc, days_for_not_inc = []):
 
 
 
-def presolve(data, date_from, day_count, top_tids_quant, cluster_num):
+def presolve(data, date_from, day_count, top_tids_quant, cluster_num, tries, step):
 
     models = []
     results = []
@@ -338,34 +338,41 @@ def presolve(data, date_from, day_count, top_tids_quant, cluster_num):
 
     for now_date in tqdm([date_from + timedelta(days=n) for n in range(day_count)], desc=f"presolve cluster_num={cluster_num}"):
 
-        optim = OptModel(data)
+        for i in range(tries):
+            optim = OptModel(data)
 
-        tids = set(optim.get_top_tids(top_tids_quant, money_start, days_from_inc, data))
+            tids = set(optim.get_top_tids(top_tids_quant + i * step, money_start, days_from_inc, data))
 
-        tids_have_to_visit = find_TID_for_inc(money_start, days_from_inc, data)
-
-
-        tids = tids.union(set(tids_have_to_visit))
-
-        print(f"Обяззательных постоматов {len(tids_have_to_visit)}: {tids_have_to_visit}")
-        print(f"Всего оптимизируемых банкоматов {len(tids)}")
+            tids_have_to_visit = find_TID_for_inc(money_start, days_from_inc, data)
 
 
-        optim.add_basic_conceptions(list(tids), money_start, days_from_inc, now_date, now_date, cluster_num)
-        optim.add_gready_concepts()
-        optim.fixed_some_TID(tids_have_to_visit, [])
+            tids = tids.union(set(tids_have_to_visit))
+            
+            #print(f'all tids: {tids}')
 
-        optim_options = {
-            'ratioGap': 0.15, 
-            'sec': 300,
-            'threads': 8,
-            "heuristics": "on",
-            "autoScale": 'on',
-            "feaspump": "on",
-            "greedyHeuristic": "on"
-            }
+            print(f"Обяззательных постоматов {len(tids_have_to_visit)}: {tids_have_to_visit}")
+            print(f"Всего оптимизируемых банкоматов {len(tids)}")
 
-        model, result = optim.solve(optim_options)
+
+            optim.add_basic_conceptions(list(tids), money_start, days_from_inc, now_date, now_date, cluster_num)
+            optim.add_gready_concepts()
+            optim.fixed_some_TID(tids_have_to_visit, [])
+
+            optim_options = {
+                'ratioGap': 0.15, 
+                'sec': 300,
+                'threads': 8,
+                "heuristics": "on",
+                "autoScale": 'on',
+                "feaspump": "on",
+                "greedyHeuristic": "on"
+                }
+
+            model, result = optim.solve(optim_options)
+            if result['Solver'][0]['Termination condition']==TerminationCondition.optimal:
+                print(f'find solution for {top_tids_quant + i * step}')
+                break
+        #assert result['Solver'][0]['Termination condition']==TerminationCondition.optimal   
         models.append([model, now_date])
         incs = calc_inc(model)
 
