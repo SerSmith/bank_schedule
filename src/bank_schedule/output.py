@@ -202,3 +202,59 @@ def find_ATM_balance_morning(df_opt_result,  data, list_TID_claster=None):
             df_money_sum.loc[list(df_opt_result[df_opt_result.date==day]['TID']), dict_num_to_date[j]] -= df_money_sum.loc[list(df_opt_result[df_opt_result.date==day]['TID']), day]
     
     return df_money_sum
+
+def find_routes_check(obj, data):
+    df = pd.DataFrame(columns=['rebro', 'rebro_flg','date_int'])
+    list_df = []
+    for auto in range(len(obj)):
+        for day in range(len(obj[auto][0])):    
+            route_dict = obj[0][0][day][0].route.extract_values()
+            df_part = pd.DataFrame(route_dict.items(), columns=['rebro', 'rebro_flg'])
+            #df_part['date_int'] = day
+            df_part['auto'] = auto 
+            df_part['date'] = obj[0][0][day][1]
+            df = pd.concat([df, df_part])
+            
+    df['date'] = pd.to_datetime(df['date'])
+    df['ATM1'] = df['rebro'].apply(lambda x: x[0])
+    df['ATM2'] = df['rebro'].apply(lambda x: x[1])
+
+    #df['date'] = df['date_int'].apply(lambda x: dict_num_to_date[x])
+    #dict_date_to_num = { k:v for (v, k) in enumerate(np.sort(list(df_money_sum.columns)))}
+    #dict_num_to_date= { v:k for (v, k) in enumerate(np.sort(list(df_money_sum.columns)))}
+
+    params_dict = data.get_params_dict()
+    start_time = params_dict['day_start']
+    end_time = params_dict['day_end']
+    min_wait = params_dict['min_wait']
+    df_routes = pd.DataFrame(columns = ['auto','TID','start_time', 'end_time', 'date'])
+
+    for date in list(df[(df.rebro_flg>0)].date.unique()):
+        #print('date', date)
+        #df_rebro_date = df[(df.date_int==date) & (df.rebro_flg>0)]
+        auto_list = list(df[(df.date==date) & (df.rebro_flg>0)].auto.unique())
+        for auto in auto_list:
+            #print(auto, date)
+            df_rebro_date_auto = df[(df.date==date) & (df.auto==auto) & (df.rebro_flg>0)]
+            
+            current_ATM = df_rebro_date_auto[df_rebro_date_auto.ATM1==-1]['ATM2'].values[0]
+            list_ATM = []
+            sum_time = 0
+            start_datetime = date + timedelta(hours = start_time.hour, minutes = start_time.minute)
+            end_datetime = date + timedelta(hours = end_time.hour, minutes = end_time.minute)
+            current_datetime = start_datetime
+            while current_ATM!=-1:
+                #print(current_ATM)
+                list_ATM.append(current_ATM)
+                next_ATM = df_rebro_date_auto[df_rebro_date_auto.ATM1==current_ATM]['ATM2'].values[0]
+
+                end_ATM_datetime = current_datetime + timedelta(minutes = min_wait)
+                if next_ATM!=-1:
+                    next_ATM_start_datetime = end_ATM_datetime + timedelta(minutes=df_distance_matrix[(df_distance_matrix.Origin_tid==current_ATM) & (df_distance_matrix.Destination_tid==next_ATM)]['Total_Time'].values[0])
+                df_routes.loc[df_routes.shape[0]] = [auto, current_ATM, current_datetime, end_ATM_datetime, date]
+
+                assert  end_ATM_datetime<=end_datetime, f'alarm, for date={dict_num_to_date[date]} and auto={auto} end_time = {end_ATM_datetime} is bigger then {end_datetime}'
+                current_ATM = next_ATM
+                current_datetime = next_ATM_start_datetime    
+    df_opt_result = df_routes[['TID','date','auto']]
+    return df_opt_result
