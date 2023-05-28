@@ -12,19 +12,44 @@ import numpy as np
 from bank_schedule import dataclaster
 
 from tqdm import tqdm
+import math
 
 
 class OptModel:
+    """Класс, реализующий оптимизационную задачу через MILP
+    """
     def __init__(self, data) -> None:
+        """_summary_
+
+        Args:
+            data (DataClaster): _description_
+        """
         self.model = pyo.ConcreteModel()
         self.data = data
 
 
-    def  add_basic_conceptions(self, tids, money_start, days_from_inc, date_from, date_to, cluster):
+    def  add_basic_conceptions(self,
+                               tids,
+                               money_start,
+                               days_from_inc,
+                               date_from,
+                               date_to,
+                               cluster):
+        """Добавление в оптимизацию сущностей и ограничений,которые можно использовать
+           как при подневной оптимизации, так и при глобальной
+
+        Args:
+            tids (list[int]): TID id, для которых бедт производиться отпимизация
+            money_start (pd.DataFrame): Остатки  банкоматах на день до оптимизационногопериода
+            days_from_inc (pd.DataFrame): Количечество дней, которое банкомат не пополнялся
+            date_from (datetime): Дата начала оптимизируемого периода
+            date_to (datetime): Дата окончания оптимизируемого периода
+            cluster (int): Номер кластера
+        """
+
 
         money_in = self.data.get_money_in(cluster)
 
-    # date(2022, 11, 14)
         money_in = money_in[(money_in["date"].dt.date >= date_from) & (money_in["date"].dt.date <= date_to)]
 
         date_num_dict = {date: num for num, date in enumerate(sorted(money_in['date'].unique()))}
@@ -61,6 +86,7 @@ class OptModel:
                                    .total_seconds() / 60
 
         distance_matrix = self.data.get_distance_matrix(cluster)
+
         self.model.distance_matrix_dict = distance_matrix.set_index(["Origin_tid",	"Destination_tid"]).to_dict()['Total_Time']
 
         self.model.days_from_inc_dict = days_from_inc.set_index(["TID"]).to_dict()['days_from_inc']
@@ -71,88 +97,73 @@ class OptModel:
 
         self.model.MAX_DATE = max(self.model.DATES)
 
+        self.model.MAX_TIDS_BY_DAY = calc_max_tid_by_date(len(self.model.TIDS), params)
+
         weights = self.calc_weights(money_start, days_from_inc, params)
 
         self.model.weights_dict = weights.set_index('TID').to_dict()["weight"]
 
 
         # Переменные
-        # Прогноз инкассации
+        # Налчие инкассации банкомата tid на дату date
         self.model.money_inc = pyo.Var(self.model.TIDS, self.model.DATES, within=pyo.Binary, initialize=0)
-
-
-
-        # Затраты на инкассацию
-        # model.costs_for_inc = pyo.Var(model.TIDS, model.DATES,  within=pyo.NonNegativeReals, initialize=0 )
-        # def con_costs_for_inc_1(model, tid, date):
-        #     return model.money_inc[tid, date] * model.COST_INC_MIN <= model.costs_for_inc[tid, date]
-        # model.con_costs_for_inc_1 = pyo.Constraint(model.TIDS, model.DATES, rule=con_costs_for_inc_1 )
-
-        # def con_costs_for_inc_2(model, tid, date):
-        #     return model.money_inside_TID[tid, date] * model.COST_INC_PERS -  model.money_inc[tid, date] * M <= model.costs_for_inc[tid, date]
-        # model.con_costs_for_inc_2 = pyo.Constraint(model.TIDS, model.DATES, rule=con_costs_for_inc_2 )
-
  
 
-
         #Последовательность маршрута
+        #Имеется ли ребро между банкоматами в дату date. Также мы добавляем "виртуальный" банкомат -1, расстояние до которого всегда 0.
+        # Он нужен для того, что бы не обрабатывать правила граничный точчек - благодаря банкомату -1 у нас для каждой вершины есть путь в
+        # вершину и путь и из вершины.
         self.model.route = pyo.Var(self.model.TIDS_with_null, self.model.TIDS_with_null, self.model.DATES, within=pyo.Binary, initialize=0 )
 
+        # Если и только если мы приехали в банкомат для него должно быть ребро - начало
         def con_route_1(model, tid, date):
             return quicksum([model.route[tid, tid2, date] for tid2 in model.TIDS_with_null if tid != tid2]) == model.money_inc[tid, date]
         self.model.con_route_1 = pyo.Constraint(self.model.TIDS, self.model.DATES, rule=con_route_1)
 
+        # Если и только если мы приехали в банкомат для него должно быть ребро - конца
         def con_route_2(model, tid, date):
             return quicksum([model.route[tid2, tid, date] for tid2 in model.TIDS_with_null if tid != tid2]) == model.money_inc[tid, date]
         self.model.con_route_2 = pyo.Constraint(self.model.TIDS, self.model.DATES, rule=con_route_2)
 
+        # Мы обязаны откуда-то стартовать
         def con_route_3(model, date):
             return quicksum([model.route[tid2, -1, date] for tid2 in model.TIDS]) == 1
         self.model.con_route_3 = pyo.Constraint(self.model.DATES, rule=con_route_3 )
 
-
+        # Мы обязаны когда-то закончить
         def con_route_4(model, date):
             return quicksum([model.route[-1, tid2, date] for tid2 in model.TIDS]) == 1
         self.model.con_route_4 = pyo.Constraint(self.model.DATES, rule=con_route_4 )
 
-
-        # def con_route_2(model, tid1, tid2, date):
-        #     return 1 - (model.money_inc[tid1, date] + model.money_inc[tid2, date]) * M <= model.route[tid1, tid2, date]
-        # model.con_route_2 = pyo.Constraint(TIDS, TIDS, DATES, rule=con_route_2 )
-
-
-
-
+        # Мы должны успеть посетить все банкоматы маршрута за время дня
         def con_max_time(model, date):
             return quicksum([model.route[tid1, tid2, date] * model.distance_matrix_dict[(tid1, tid2)] for tid1, tid2 in itertools.product(list(model.TIDS), list(model.TIDS)) if tid1 != tid2]) +\
             quicksum([model.money_inc[tid, date] * model.MIN_WAIT for tid in model.TIDS])\
             <= model.MINUTES_CARS
         self.model.con_max_time = pyo.Constraint(self.model.DATES, rule=con_max_time )
 
-
-
+        # Облегчим задачу оптимизации - эврестически ограничив максимальную длину маршрута
         def con_max_inc(model, date):
-            return quicksum([model.money_inc[tid, date] for tid in model.TIDS]) <= 26
+            return quicksum([model.money_inc[tid, date] for tid in model.TIDS]) <= model.MAX_TIDS_BY_DAY
         self.model.con_max_inc = pyo.Constraint(self.model.DATES, rule=con_max_inc)
 
     
 
-
-
-#заставляем иметь один цикл
+        # Запрещаем все циклы, кроме проходящего через -1
         self.model.rank = pyo.Var(self.model.TIDS, self.model.DATES, within=pyo.NonNegativeReals, initialize=0)
         def rank1(model, tid1, tid2, date):
             return model.rank[tid1, date] + 1 <= model.rank[tid2, date] + model.M * (1 - model.route[tid1, tid2, date])
-            # return model.rank[tid1, date] + model.route[tid1, tid2, date] <= model.rank[tid2, date]
-
         self.model.rank1 = pyo.Constraint(self.model.TIDS, self.model.TIDS, self.model.DATES, rule=rank1)
-
-
 
         return self.model
 
 
     def fixed_some_TID(self, list_TID_to_inc, list_TID_not_inc):
+        """Функция, фиксирующая банкоматы, которые мы обязаны посетить и те которые мы обязаны не посещеать
+        Args:
+            list_TID_to_inc (list(int)): Банкоматы, которые обязаны посетить
+            list_TID_not_inc (list(int)): Банкоматы, которые обязаны не посещать
+        """
 
         for TID in list_TID_to_inc:
             self.model.money_inc[TID, 0].fix(1)
@@ -163,7 +174,8 @@ class OptModel:
         
 
     def add_gready_concepts(self):
-
+        """Добаляем целевую для подневной оптимизации
+        """
         self.model.OBJ = pyo.Objective(expr=
                                     quicksum([(self.model.weights_dict[tid]) * self.model.money_inc[(tid, date)] for tid, date in itertools.product(list(self.model.TIDS), list(self.model.DATES))])
                                     , sense=pyo.maximize)
@@ -173,6 +185,8 @@ class OptModel:
 
 
     def add_full_optim_concepts(self):
+        """Добавление ксловий для полной оптимизации
+        """
 
         #затраты на инкассацию
         def costs_for_inc(model, tid, date):
@@ -192,6 +206,7 @@ class OptModel:
 
         # self.model.con_days_from_inc = pyo.Constraint(self.model.TIDS, self.model.DATES, rule=con_days_from_inc)
 
+        # Затраты на остатки в банкоматах 
         def costs_from_money(model, tid, date):
             return model.money_inside_TID[tid, date] * model.OVERNIGHT_BY_DAY
         self.model.costs_from_money = pyo.Expression(self.model.TIDS, self.model.DATES, rule=costs_from_money )
@@ -199,7 +214,6 @@ class OptModel:
 
         def con_money_inside_TID_1(model, tid, date):
             if date == 0:
-                # TODO Проверить не теряем ли мы день
                 out = model.money_start_dict[tid]
             else:
                 out = model.money_inside_TID[tid, date - 1] + model.money_in_dict[(tid, date - 1)]
@@ -212,22 +226,26 @@ class OptModel:
             return model.money_inside_TID[tid, date] <= (1 - model.money_inc[tid, date]) * self.model.M
         self.model.con_money_inside_TID_2 = pyo.Constraint(self.model.TIDS, self.model.DATES, rule=con_money_inside_TID_2)
 
-
-        # def con_max_money(model, tid, date):
-        #     return model.money_inside_TID[tid, date] <= model.MAX_MONEY
-        # self.model.con_max_money = pyo.Constraint(self.model.TIDS, self.model.DATES, rule=con_max_money)
-
-
+        # Запрещено иметь деньги в банкомате вышк определенной суммы
+        def con_max_money(model, tid, date):
+            return model.money_inside_TID[tid, date] <= model.MAX_MONEY
+        self.model.con_max_money = pyo.Constraint(self.model.TIDS, self.model.DATES, rule=con_max_money)
 
 
-        self.model.OBJ = pyo.Objective(expr=
-                                    # quicksum([model.money_inside_TID[tid, date] for tid, date in itertools.product(list(model.TIDS), list(model.DATES)) ]) +
-                                    # quicksum([model.days_from_inc[tid, date] for tid, date in itertools.product(list(model.TIDS), list(model.DATES)) ]) +
-                                    (1/self.data.get_params_dict()['technical_cost']) * quicksum([self.model.costs_from_money[tid, date] for tid, date in itertools.product(list(self.model.TIDS), list(self.model.DATES)) ]) +
-                                    (1/self.data.get_params_dict()['technical_cost']) * quicksum([self.model.costs_for_inc[tid, date] for tid, date in itertools.product(list(self.model.TIDS), list(self.model.DATES)) ]), sense=pyo.minimize)
+
+
+        self.model.OBJ = pyo.Objective(expr= 
+                                    quicksum([self.model.costs_from_money[tid, date] for tid, date in itertools.product(list(self.model.TIDS), list(self.model.DATES)) ]) +
+                                    quicksum([self.model.costs_for_inc[tid, date] for tid, date in itertools.product(list(self.model.TIDS), list(self.model.DATES)) ])
+                                    ,
+                                    sense=pyo.minimize)
 
     def load_presolve(self, presolved_models):
+        """Функция 
 
+        Args:
+            presolved_models (_type_): _description_
+        """
         for num, presolved_model in enumerate(presolved_models):       
             for tid in itertools.product(list(presolved_model.TIDS)):
                 self.model.money_inc[tid, num].value = presolved_model.money_inc[tid, 0].value
@@ -244,7 +262,7 @@ class OptModel:
         for key in optim_options:
             opt.options[key] = optim_options[key]
 
-        results = opt.solve(self.model, tee=False)
+        results = opt.solve(self.model, tee=True)
 
         print(results['Problem'])
         print(results['Solver'])
@@ -264,6 +282,8 @@ class OptModel:
         return weights.sort_values('weight', ascending=False)['TID'].head(quant).to_list()
 
 
+def calc_max_tid_by_date(tids_quant, params, add_coeff=1.2):
+    return math.ceil(tids_quant / params['max_days_inc'] * add_coeff)
 
 def update_money_start(money_start, money_in_full, now_date, incs):
 
