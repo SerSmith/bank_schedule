@@ -1,7 +1,7 @@
 """Скрипты для визуализации
 """
 import os
-
+from typing import Optional, Union, List
 import numpy as np
 import pandas as pd
 from scipy.stats import norm
@@ -9,7 +9,8 @@ import matplotlib.pyplot as plt
 
 import plotly.express as px
 
-from bank_schedule.constants import CENTER_LAT, CENTER_LON
+from bank_schedule.helpers import calc_cartesian_coords
+from bank_schedule.constants import CENTER_LAT, CENTER_LON, EXTERNAL_DATA_FOLDER
 
 def plot_clusters_size(labels_series: pd.Series,
                        title: str='') -> None:
@@ -73,5 +74,41 @@ def plot_normal_distr(mean: float, std: float):
     plt.plot(y_vals)
 
 
-def plot_route():
-    pass
+def plot_map(
+    cartes1: pd.DataFrame,
+    cartes2: Optional[pd.DataFrame]=None,
+    size1: int=10,
+    size2: int=1,
+    alpha1: float=.2,
+    alpha2: float=1,
+    c1: Union[str, List]='b',
+    c2: Union[str, List]='r'):
+    """Печатает точки на фоне предсохраненной карты Москвы
+
+    Args:
+        cartes1 (pd.DataFrame): _description_
+        cartes2 (_type_, optional): _description_. Defaults to None.
+        size1 (int, optional): _description_. Defaults to 10.
+        size2 (int, optional): _description_. Defaults to 1.
+        alpha1 (float, optional): _description_. Defaults to .2.
+        alpha2 (int, optional): _description_. Defaults to 1.
+        c1 (str, optional): _description_. Defaults to 'b'.
+        c2 (str, optional): _description_. Defaults to 'r'.
+    """
+
+    mos_img = plt.imread(os.path.join(EXTERNAL_DATA_FOLDER, 'map.png'))
+
+    bbox_geo = (37.3260, 37.9193, 55.5698, 55.9119)
+    bbox_cartes = calc_cartesian_coords(bbox_geo[2:], bbox_geo[:2])
+    bbox = bbox_cartes['x'].to_list() + bbox_cartes['y'].to_list()
+
+    _, ax = plt.subplots(figsize=(12,12))
+    ax.scatter(cartes1['x'], cartes1['y'], zorder=1, alpha=alpha1, c=c1, s=size1)
+    if cartes2 is not None:
+        ax.scatter(cartes2['x'], cartes2['y'], zorder=1, alpha=alpha2, c=c2, s=size2)
+
+    ax.set_xlim(bbox[0],bbox[1])
+    ax.set_ylim(bbox[2],bbox[3])
+    ax.axis('off')
+    ax.imshow(mos_img, zorder=0, extent=bbox, aspect='equal')
+    plt.show()

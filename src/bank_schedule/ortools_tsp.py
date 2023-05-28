@@ -10,7 +10,6 @@ from ortools.constraint_solver import routing_enums_pb2
 from ortools.constraint_solver import pywrapcp
 
 from bank_schedule.data import distances_matrix_from_dataframe
-from bank_schedule import scheduler
 from bank_schedule.data import Data
 
 
@@ -200,63 +199,64 @@ def get_best_route(loader: Data,
 
 
 def optimize_routes(loader: Data,
-                    residuals: pd.DataFrame,
-                    atms_per_day: int=200,
-                    mandatory_selection_threshold: int=1,
+                    schedule_df: pd.DataFrame,
                     n_iterations: int=1,
-                    neighborhood_radius: float=15,
                     max_route_time: float=720.0,
-                    mandatory_selection_col: str='days_to_deadline',
-                    tids_col: str='TID',
-                    use_greedy: bool=True):
+                    verbose: bool=False) -> Tuple[Dict, Dict]:
     """Находит количество машин, необходимое для обслуживания банкоматов
-    в день
+    согласно расписанию
 
     Args:
         loader (Data): класс загрузки данных
-        residuals (pd.DataFrame): данные об остатках, подготовленные для составления расписания
-        (см. scheduler.prepare_residual_to_schedule_creation)
-        atms_per_day (int, optional): _description_. Defaults to 150.
-        mandatory_selection_threshold (int, optional): _description_. Defaults to 1.
-        n_iterations (int, optional): _description_. Defaults to 1.
-        neighborhood_radius (float, optional): _description_. Defaults to 15.
-        max_route_time (float, optional): _description_. Defaults to 720.0.
-        mandatory_selection_col (str, optional): _description_. Defaults to 'days_to_deadline'.
-        tid_col (str, optional): _description_. Defaults to 'TID'.
+        schedule_df (pd.DataFrame): датафрейм с расписанием инкассации. Должен содержать колонки
+        'TID' и 'date'
+        n_iterations (int, optional): количество итераций построения маршрута.
+         Выбирается лучшее решение из полученных на каждой итерации Defaults to 1.
+        max_route_time (float, optional): максимально допустимое время маршрута в минутах
+         для одного броневика. Defaults to 720.0.
 
     Returns:
-        _type_: _description_
+        Tuple[Dict, Dict: словари со списками банкоматов в порядке инкассации и временем
+         пути + инкассации на каждую дату из расписания
     """
 
-    atms_df = scheduler.get_atms_for_today_collection(loader,
-                                                      residuals,
-                                                      atms_per_day,
-                                                      mandatory_selection_threshold,
-                                                      neighborhood_radius,
-                                                      mandatory_selection_col=mandatory_selection_col,
-                                                      tids_col=tids_col,
-                                                      use_greedy=use_greedy)
-    tids_for_collection = atms_df[tids_col].tolist()
+    schedule = schedule_df.groupby('date')['TID'].agg(list).to_dict()
+    car_routes_dict = {}
+    cars_routes_times_dict = {}
 
-    route, route_time, _ = get_best_route(loader, tids_for_collection, n_iterations=n_iterations)
+    for date, tids_list in schedule.items():
 
-    if len(route) != len(set(route)):
-        raise ValueError('В маршруте дублируются точки (есть петли)')
+        car_routes_dict[date] = {}
+        cars_routes_times_dict[date] = {}
 
-    cars_routes, cars_routes_times = split_route_by_cars(route, route_time, max_route_time)
+        route, route_time, _ = get_best_route(loader, tids_list, n_iterations=n_iterations)
 
-    max_time = - float('inf')
-    min_time = float('inf')
+        if len(route) != len(set(route)):
+            raise ValueError('В маршруте дублируются точки (есть петли)')
 
-    for _car, _route_time in cars_routes_times.items():
-        _route_time_sum = sum(_route_time)
-        max_time = max(max_time, _route_time_sum)
-        min_time = min(min_time, _route_time_sum)
+        cars_routes, cars_routes_times = split_route_by_cars(route, route_time, max_route_time)
 
-        if _route_time_sum > max_route_time:
-            raise ValueError(f'Время {sum(_route_time)} > {max_route_time} для машины {_car}')
+        car_routes_dict[date] = cars_routes
+        cars_routes_times_dict[date] = cars_routes_times
 
-    return cars_routes, cars_routes_times, max_time, min_time
+        max_rt, min_rt = -float('inf'), float('inf')
+
+        for _car, _route_time in cars_routes_times.items():
+
+            _route_time_sum = sum(_route_time)
+            max_rt = max(max_rt, _route_time_sum)
+            min_rt = min(min_rt, _route_time_sum)
+
+            if _route_time_sum > max_route_time:
+                raise ValueError(f'Время {sum(_route_time)} > {max_route_time} для машины {_car}')
+
+        if verbose:
+            print(f'date: {str(date)} | '
+                  f'max route time: {round(max_rt, 2):<7}| '
+                  f'max route time: {round(min_rt, 2):<7}| '
+                  f'number of cars: {len(cars_routes):<2}| ATMs visited: {len(route):<3}')
+
+    return car_routes_dict, cars_routes_times_dict
 
 
 def split_route_by_cars(myroute: List[int],
@@ -326,6 +326,30 @@ def split_route_by_cars(myroute: List[int],
         raise ValueError('Изначальный и разделенный маршруты не совпадают')
 
     return cars_routes, cars_routes_times
+
+
+def prepare_tsp_result(car_routes_dict: Dict[np.datetime64, Dict[int, List[int]]]) -> pd.DataFrame:
+    """Из словаря с результатами оптимизации маршрутов инкассации формирует датафрейм
+
+    Args:
+        car_routes_dict (Dict[np.datetime64, Dict[int, List[int]]]): _description_
+
+    Returns:
+        pd.DataFrame: _description_
+    """
+    results_list = []
+
+    for date, cars_dict in car_routes_dict.items():
+        for _car, _route in cars_dict.items():
+            df = pd.DataFrame(columns=['TID', 'date', 'auto'])
+            df['TID'] = _route
+            df['auto'] = _car
+            df['date'] = date
+            df.index.name = 'number'
+            df.reset_index(inplace=True)
+            results_list.append(df.copy())
+
+    return pd.concat(results_list, ignore_index=True)
 
 
 if __name__ == '__main__':

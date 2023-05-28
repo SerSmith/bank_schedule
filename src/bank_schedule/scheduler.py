@@ -1,7 +1,7 @@
 """Скрипты для построения расписания инкассации на текущий день
 """
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 from warnings import warn
 import pandas as pd
 import numpy as np
@@ -10,6 +10,7 @@ import scipy.stats
 
 from bank_schedule.data import Data
 from bank_schedule import helpers
+from bank_schedule.forecast import load_model, LGBM_MODEL_NAME
 
 INCOME_COL = 'money_in'
 RESIDUALS_COL = 'money'
@@ -474,3 +475,105 @@ def get_atms_for_today_collection_greedy(residuals: pd.DataFrame,
         warn(f'В выборке {n_samples - free_space} точек. Это меньше, чем {n_samples}. '
              'Всё, что есть, будет отобрано.')
     return pd.concat(to_collect_list, ignore_index=True)
+
+
+def prepare_schedule(loader: Data,
+                     forecast_horizon: int=14,
+                     deadline_threshold: int=1,
+                     atms_per_day_min: int=150,
+                     neighborhood_radius: int=15,
+                     use_greedy_scheduler: bool=False,
+                     use_real_data_for_update: bool=True,
+                     last_collection_method: str='constant',
+                     forecast_model_name: str=LGBM_MODEL_NAME,
+                     end_date: Union[str, np.datetime64]='2022-11-30') -> pd.DataFrame:
+    """_summary_
+
+    Args:
+        loader (Data): загрузчик данных
+        forecast_horizon (int, optional): горизонт прогноза при ежедневном обновлении расписания.
+          Defaults to 14.
+        deadline_threshold (int, optional): за сколько дней до "дедлайна"
+         инкассировать банкоматы. Defaults to 1.
+        atms_per_day_min (int, optional): сколько банкоматов минимум надо объехать за день.
+         Defaults to 150.
+        neighborhood_radius (int, optional): в каком радиусе времени пути банкоматы подходят
+         для попутного объезда. Defaults to 15.
+        use_greedy_scheduler (bool, optional): использовать жадный настройщик расписания.
+         Defaults to False.
+        use_real_data_for_update (bool, optional): использовать реальные данные для обновления расписания.
+         Defaults to True.
+        last_collection_method (str, optional): как проставлять дату последней инкассации в файле остатков.
+         Defaults to 'constant'.
+        forecast_model_name (str, optional): имя модели прогноза пополнений. На данный момент доступно
+        lgbm Defaults to LGBM_MODEL_NAME.
+        end_date (Union[str, np.datetime64], optional): _description_. Defaults to '2022-11-30'.
+
+    Returns:
+        pd.DataFrame: _description_
+    """
+    forecast_model = load_model(forecast_model_name)
+
+    initial_residuals = get_initial_resuduals(loader,
+                                              last_collection_method=last_collection_method)
+    residuals = initial_residuals.copy()
+
+    today = get_today_from_residuals(residuals)
+    end_date = pd.to_datetime(end_date)
+
+    n_periods = (end_date - today).days
+
+    # если мы не используем обновления расписания,
+    # то просто делаем прогноз на заданный срок и сиходя из него
+    # составляем статическое расписание
+
+    if use_real_data_for_update:
+        incomes_df = loader.get_money_in()
+    else:
+        incomes_df = forecast_model.predict(today, n_periods)
+
+    # в этот список будем сохранять расписание по дням
+    collected_atms_list = []
+
+    # поехали, имитируем движение по дням
+    while today < end_date:
+        tomorrow = today + pd.Timedelta(days=1)
+        # прогнозируем сегодня с вечера, а объезжаем завтра
+
+        residuals = prepare_residual_to_schedule_creation(residuals,
+                                                          forecast_model,
+                                                          horizon=forecast_horizon)
+
+        atms_for_collection = get_atms_for_today_collection(
+            loader,
+            residuals,
+            n_samples=atms_per_day_min,
+            mandatory_selection_threshold=deadline_threshold,
+            neighborhood_radius=neighborhood_radius,
+            use_greedy=use_greedy_scheduler
+            )
+
+        atms_for_collection['date'] = tomorrow
+        collected_atms_list.append(atms_for_collection)
+        collected_tids = atms_for_collection['TID'].to_list()
+
+        # обнуляем остатки и дату в инкассированных банкоматах
+        collected_cond = residuals['TID'].isin(collected_tids)
+        residuals['date'] = tomorrow
+        residuals.loc[collected_cond, 'money'] = 0
+        residuals.loc[collected_cond, 'last_collection_date'] = tomorrow
+        residuals.loc[collected_cond, 'overflow_date'] = pd.NaT
+
+        # считаем остаток на вечер дня инкассации, зная income за этот день
+        resid_money = residuals.set_index('TID')['money']
+        income_money = incomes_df.set_index('TID')
+        income_money = income_money.loc[income_money['date']==tomorrow, 'money_in']
+        income_money = income_money[resid_money.index]
+
+        residuals['money'] = (resid_money + income_money).values
+
+        today = tomorrow
+
+    schedule_df = pd.concat(collected_atms_list, ignore_index=True)
+
+    return schedule_df
