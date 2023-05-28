@@ -99,7 +99,7 @@ class OptModel:
 
         self.model.MAX_TIDS_BY_DAY = calc_max_tid_by_date(len(self.model.TIDS), params)
 
-        weights = self.calc_weights(money_start, days_from_inc, params)
+        weights = self.calc_weights(money_start, days_from_inc)
 
         self.model.weights_dict = weights.set_index('TID').to_dict()["weight"]
 
@@ -243,7 +243,7 @@ class OptModel:
                                     sense=pyo.minimize)
 
     def load_presolve(self, presolved_models):
-        """Функция 
+        """Функция, инициализарующая начальное решение
 
         Args:
             presolved_models (_type_): _description_
@@ -258,6 +258,11 @@ class OptModel:
 
 
     def solve(self, optim_options):
+        """Запуск оптимизации
+
+        Args:
+            optim_options (dict): Парметры оптимизации
+        """
 
         opt = SolverFactory('cbc')
 
@@ -271,23 +276,62 @@ class OptModel:
         return self.model, results
     
     @staticmethod
-    def calc_weights(money_start, days_from_inc, params):
+    def calc_weights(money_start, days_from_inc):
+        """Рассчет весов на банкомат
+
+        Args:
+            money_start (_type_): Количетсво денег на начало дня
+            days_from_inc (_type_): Количетсво дней с последней инкассаций банкомата
+        Returns:
+            pd.Dataframe: вес на банкомат
+        """
         weights = money_start.merge(days_from_inc, on='TID')
-        # weights['weight'] = weights["money"] + weights["days_from_inc"] ** params["pow_weight"]
         weights['weight'] = weights["money"] + 100000 * weights["days_from_inc"] ** 2
         return weights[["TID", 'weight']]
 
 
     def get_top_tids(self, quant, money_start, days_from_inc, data):
+        """Получение наиболее перспекутивных бнкоматов
+
+        Args:
+            quant (int): кол-во банкоматов
+            money_start (pd.DataFrame): Количество денег на начало дня
+            days_from_inc (pd.DataFrame): Дней с предыдущего пополнения
+            data (dataClaster): Данные
+
+        Returns:
+            _type_: _description_
+        """
         params = data.get_params_dict()
         weights = self.calc_weights(money_start, days_from_inc, params)
         return weights.sort_values('weight', ascending=False)['TID'].head(quant).to_list()
 
 
 def calc_max_tid_by_date(tids_quant, params, add_coeff=1.2):
+    """_summary_
+
+    Args:
+        tids_quant (_type_): _description_
+        params (_type_): _description_
+        add_coeff (float, optional): _description_. Defaults to 1.2.
+
+    Returns:
+        _type_: _description_
+    """
     return math.ceil(tids_quant / params['max_days_inc'] * add_coeff)
 
 def update_money_start(money_start, money_in_full, now_date, incs):
+    """Обновляем количество денег в банкомате
+
+    Args:
+        money_start (_type_): Количество денег в банкомате на начло дня
+        money_in_full (_type_): _description_
+        now_date (_type_): _description_
+        incs (_type_): _description_
+
+    Returns:
+        pd.DataFrame: Количество денег в банкомате на начло следующего дня
+    """
 
     money_in = money_in_full.loc[money_in_full["date"].apply(lambda x: x.strftime('%Y-%m-%d')) == str(now_date), ["TID",	"money_in"]]
 
@@ -302,6 +346,15 @@ def update_money_start(money_start, money_in_full, now_date, incs):
     return out
 
 def update_days_from_inc(days_from_inc, incs):
+    """Обновляем количество дней с последней инкассации
+
+    Args:
+        days_from_inc (pd.DataFrame): Количетсво дней с последней инкассации
+        incs (pd.DataFrame): Инкассации
+
+    Returns:
+        pd.DataFrame: Обновленное количетсво дней с последней инкассации
+    """
 
     out = days_from_inc.merge(incs, on=["TID"], how='left')
 
@@ -312,7 +365,14 @@ def update_days_from_inc(days_from_inc, incs):
     return out[["TID", 'days_from_inc']]
 
 def calc_inc(opt):
+    """Достаем инкассации из pyomo
 
+    Args:
+        opt (pyomo): Модель
+
+    Returns:
+        pd.DataFrame: Оптимальные инкассации
+    """
     solution_dict = opt.money_inc.extract_values()
 
 
@@ -324,6 +384,17 @@ def calc_inc(opt):
 
 
 def find_TID_for_inc(money_start, days_from_inc, data, days_for_inc_force=None):
+    """Определение банкоматов, которые мы обязаны посетить
+
+    Args:
+        money_start (pd.DataFrame): Количество денег в банкомате
+        days_from_inc (pd.DataFrame): Количество дней с последнего посещение банкомата
+        data (pd.DataFrame): Данные
+        days_for_inc_force (list(int), optional): Дни, в которые мы обязаны посетить
+
+    Returns:
+        _type_: _description_
+    """
     if days_for_inc_force is None:
         days_for_inc_force = [14]
 
@@ -334,31 +405,101 @@ def find_TID_for_inc(money_start, days_from_inc, data, days_for_inc_force=None):
     list_TID = list(set(list_TID_max_money) | set(list_TID_from_inc))
     return list_TID
 
-def find_TID_not_inc(days_from_inc, days_for_not_inc = []):
+def find_TID_not_inc(days_from_inc, days_for_not_inc=[]):
+    """Банкоматы, которые запрещено посещать
+
+    Args:
+        days_from_inc (pd.DataFrame): Дней с последней инкассации
+        days_for_not_inc (list(int), optional): Список дней, которые запрещено посещать. Defaults to [].
+
+    Returns:
+        _type_: _description_
+    """
     list_TID_not_inc = list(days_from_inc[days_from_inc.days_from_inc.isin(days_for_not_inc)].TID.unique())
     return list_TID_not_inc
 
+def one_try_optim(top_tids_quant,
+                  money_start,
+                  days_from_inc,
+                  data,
+                  tids_have_to_visit,
+                  now_date,
+                  optim_options):
+    """Один внутренний запуск оптимизации
+
+    Args:
+        top_tids_quant (int): Количество банкоматов
+        money_start (pd.DataFrame): Количество денег в банкоматах на начало период
+        days_from_inc (pd.DataFrame): Количество дней с последней инкассации
+        data (dataClaster):  Интерфейс данных
+        tids_have_to_visit (list(int)): Банкоматы, которые мы обзаны посетить
+        now_date (datetime.date): Дата сейчас
+        optim_options (dict): Настройки оптимизации
+
+    Returns:
+        _type_: _description_
+    """
+    optim = OptModel(data)
+
+    # Выбираем банкоматы - кандидаты для оптимизации
+    tids = set(optim.get_top_tids(top_tids_quant, money_start, days_from_inc, data))
+
+    tids = tids.union(set(tids_have_to_visit))
+
+    print(f"Обяззательных постоматов {len(tids_have_to_visit)}: {tids_have_to_visit}")
+    print(f"Всего оптимизируемых банкоматов {len(tids)}")
+
+    # Формируем оптимизацию
+    optim.add_basic_conceptions(list(tids), money_start, days_from_inc, now_date, now_date, cluster_num)
+    optim.add_gready_concepts()
+    optim.fixed_some_TID(tids_have_to_visit, [])
+    
+    # Решаем оптимизацию
+    model, result = optim.solve(optim_options)
+    return model, result
 
 
 
-def presolve(data, date_from, day_count, top_tids_quant, cluster_num, tries, step):
+def run_milp_optim(data,
+                   date_from,
+                   day_count,
+                   cluster_num,
+                   top_tids_quant=40,
+                   tries=3,
+                   step=20):
+    """Запускаем решение, через MILP
 
+    Args:
+        data (dataClaster): Интерфейс для даннх
+        date_from (datetime.date): Дата начала оптимизации
+        day_count (int): Количество дней в оптимизируемом периоде
+        top_tids_quant (int): Рассматриваемое количество наиболее перспективных банкоматов. Defaults to 40.
+        cluster_num (int): Номер кластера
+        tries (int, optional): Количество внутренних перезапусков. Defaults to 3.
+        step (int, optional): Шаг при перезапуске. Defaults to 20.
+
+    Returns:
+        _type_: _description_
+    """
     models = []
     results = []
 
+    # Скачиваем первичные данные
+    # Количество денег на начло оптимизируемого периода
     money_start = data.get_money_start(cluster_num)
+    # Датасет пополнений
     money_in = data.get_money_in(cluster_num)
 
-    
+    # Банкоматы в кластере
     tids_by_cluster = data.get_tids_by_claster(cluster_num)
-
+    #Количество дней с последней инкассации
     days_from_inc = pd.DataFrame(tids_by_cluster, columns=['TID'])
-
     days_from_inc['days_from_inc'] = 0
 
-
-
+    # Для всех дней оптимизируемого периода
     for now_date in tqdm([date_from + timedelta(days=n) for n in range(day_count)], desc=f"presolve cluster_num={cluster_num}"):
+
+        # Настройки солвера
         optim_options = {
                 'ratioGap': 0.15, 
                 'sec': 180,
@@ -368,54 +509,51 @@ def presolve(data, date_from, day_count, top_tids_quant, cluster_num, tries, ste
                 "feaspump": "on",
                 "greedyHeuristic": "on"
                 }
+        
+        # Банкоматы, которые мы обязаны посетить
         tids_have_to_visit = find_TID_for_inc(money_start, days_from_inc, data)
+
+        # Перезапуски в случае, если оптимизация не смогла найти решение за отведенное время 
         for i in range(tries):
-            optim = OptModel(data)
 
-            tids = set(optim.get_top_tids(top_tids_quant + i * step, money_start, days_from_inc, data))
+            model, result = one_try_optim(top_tids_quant + i * step,
+                                          money_start,
+                                          days_from_inc,
+                                          data,
+                                          tids_have_to_visit,
+                                          now_date,
+                                          optim_options)
 
-            tids = tids.union(set(tids_have_to_visit))
-
-            print(f"Обяззательных постоматов {len(tids_have_to_visit)}: {tids_have_to_visit}")
-            print(f"Всего оптимизируемых банкоматов {len(tids)}")
-
-
-            optim.add_basic_conceptions(list(tids), money_start, days_from_inc, now_date, now_date, cluster_num)
-            optim.add_gready_concepts()
-            optim.fixed_some_TID(tids_have_to_visit, [])
-
-            model, result = optim.solve(optim_options)
+            # Если мы не нашли подходящее решение, то перезапустимся
             if (result['Solver'][0]['Termination condition']==TerminationCondition.optimal) | (result['Solver'][0]['Termination condition']==TerminationCondition.maxTimeLimit):
                 print(f'find solution for {top_tids_quant + i * step}')
                 break
+
         if not ((result['Solver'][0]['Termination condition'] == TerminationCondition.optimal) | (result['Solver'][0]['Termination condition']==TerminationCondition.maxTimeLimit)):
             i = 1
-            while top_tids_quant  - i * int(step/2) > 0 :
-                optim = OptModel(data)
+            while top_tids_quant - i * int(step/2) > 0 :
 
-                tids = set(optim.get_top_tids(top_tids_quant - i * step, money_start, days_from_inc, data))
+                
+                model, result = one_try_optim(top_tids_quant - i * int(step/2),
+                                money_start,
+                                days_from_inc,
+                                data,
+                                tids_have_to_visit,
+                                now_date,
+                                optim_options)
 
-                tids = tids.union(set(tids_have_to_visit))
-
-                print(f"Обяззательных постоматов {len(tids_have_to_visit)}: {tids_have_to_visit}")
-                print(f"Всего оптимизируемых банкоматов {len(tids)}")
-
-
-                optim.add_basic_conceptions(list(tids), money_start, days_from_inc, now_date, now_date, cluster_num)
-                optim.add_gready_concepts()
-                optim.fixed_some_TID(tids_have_to_visit, [])
-
-                model, result = optim.solve(optim_options)
                 if (result['Solver'][0]['Termination condition']==TerminationCondition.optimal) | (result['Solver'][0]['Termination condition']==TerminationCondition.maxTimeLimit):
                     print(f'find solution for {top_tids_quant - i * step}')
                     break   
                 i += 1
-        models.append([model, now_date])
+        # Вынимаем инкассации
         incs = calc_inc(model)
 
+        # Сохраняемс результаты
+        models.append([model, now_date])
         results.append((result, incs, money_start, days_from_inc))
 
-
+        # Обновлем money_start и days_from_inc
         money_start = update_money_start(money_start, money_in, now_date, incs)
         days_from_inc = update_days_from_inc(days_from_inc, incs)
 
@@ -430,31 +568,5 @@ if __name__ == "__main__":
     data.run_cluster(0.1, 5)
 
 
-    presolved_models, presolved_results = presolve(data, date(2022, 11, 1), 15, cluster_num)
+    presolved_models, presolved_results = run_milp_optim(data, date(2022, 11, 1), 15, cluster_num)
 
-
-
-
-# optim = OptModel(data)
-
-# money_start = data.get_money_start()
-
-# tids_by_cluster = data.get_tids_by_claster(cluster_num)
-
-# days_from_inc = pd.DataFrame(tids_by_cluster, columns=['TID'])
-
-# days_from_inc['days_from_inc'] = 0
-
-# optim.add_basic_conceptions(money_start, days_from_inc, date(2022, 11, 1), date(2022, 11, 15), cluster_num)
-# optim.add_full_optim_concepts()
-
-# optim_options = {
-#     'ratioGap': 0.0001, 
-#     'sec': 120,
-#     'threads': 10}
-
-# optim.load_presolve(presolved_models)
-
-# print("start solving")
-
-# model = optim.solve(optim_options)
