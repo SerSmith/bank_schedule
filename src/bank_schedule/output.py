@@ -3,50 +3,35 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 
-# def find_ATM_balance_evening(df_opt_result, df_money, df_money_start, params_dict):
-#     """
-#     Функция принимает результаты оптимизации и выдает датафрейм с остатками на счетах в банкоматах на каждый день
-#     """
-#     df_money = df_money.copy()
-#     df_money_start = df_money_start.set_index('TID').copy()
-#     df_money = df_money.set_index('TID')
-#     df_money.drop(['остаток на 31.08.2022 (входящий)'], axis=1, inplace=True)
-#     df_money.columns = pd.to_datetime(df_money.columns)
 
-#     df_money_sum = df_money.copy()
+    """Проставляем ближайшие ожидаемые даты переполнения банкоматов, если оно произойдет
+     в течение horizon дней
+    1. Прогнозируем income на horizon дней вперед
+    2. На основе прогноза определяем даты переполнения банкоматов
+     в пределах заданного горизонта horizon
+    3. Проставляем даты переполнения в рамках горизонта
+    Предполагается, что мы делаем это вечером после инкассации
 
-#     for i in tqdm(df_money.columns):
-#         df_money_sum[i] = df_money[i] + df_money_start['money']
-#     for (j, column) in enumerate(df_money.columns):
-#         for column_2 in df_money.columns[j+1:]:
-#             df_money_sum[column_2] = df_money_sum[column_2] + df_money[column]
+    Args:
+        today_residuals (pd.DataFrame): данные об остатках на текущий вечер
+        forecast_model (object): модель прогноза income
+        horizon (int, optional): горизонт анализа. Defaults to 3.
+        overflow_thresh (int, optional): порог переполнения. Defaults to 10**6.
 
-#     date_start = df_money_sum.columns.min()
-#     date_minus_1  = date_start - timedelta(days=1)
-#     df_money_sum[date_minus_1] = df_money_start['money']
-#     df_money_sum = df_money_sum[df_money_sum.columns.sort_values()]
+    Raises:
+        ValueError: _description_
 
-
-#     unique_date = pd.to_datetime(df_opt_result.date.unique())     #уникальные дни инкасации
-#     dict_date_to_num = { k:v for (v, k) in enumerate(df_money_sum.columns)}
-#     dict_num_to_date= { v:k for (v, k) in enumerate(df_money_sum.columns)}
-
-#     # обработаем инкасации
-#     for day in tqdm(unique_date):
-#         date_before = dict_num_to_date[dict_date_to_num[day]-1]
-#         for j in range(dict_date_to_num[day], df_money_sum.shape[1]):
-#             df_money_sum.loc[list(df_opt_result[df_opt_result.date==day]['TID']), dict_num_to_date[j]] -= df_money_sum.loc[list(df_opt_result[df_opt_result.date==day]['TID']), date_before]
-
-#     df_money_sum.drop([date_minus_1], axis=1, inplace=True)
-
-#     # ограничиваем максимальной вместительностью
-#     condition = df_money_sum < params_dict['max_money']
-#     df_money_sum = df_money_sum.where(condition, other = params_dict['max_money'])
-#     return df_money_sum
+    Returns:
+        List[int]: _description_
+    """
 
 def find_ATM_balance_evening(df_opt_result, data, list_TID_claster = None):
     """
-    Функция принимает результаты оптимизации и выдает датафрейм с остатками на счетах в банкоматах на каждый день
+    Функция принимает результаты оптимизации и выдает датафрейм с остатками на счетах в банкоматах на ночь каждый день (учитываются пополнения в течении дня)
+    Args:
+        df_opt_result (pd.DataFrame): результат оптимизации
+        data (Data): класс со входными данными
+        list_TID_claster (list, optional): список банкоматов (если хотим запустить функцию на подмножестве банкоматов)
     """
     params_dict = data.get_params_dict()
     df_money_in = data.get_money_in()
@@ -90,23 +75,24 @@ def find_ATM_balance_evening(df_opt_result, data, list_TID_claster = None):
 
     df_money_sum.drop([date_minus_1], axis=1, inplace=True)
 
-    # ограничиваем максимальной вместительностью
-    #condition = df_money_sum < params_dict['max_money']
-    #df_money_sum = df_money_sum.where(condition, other = params_dict['max_money'])
     return df_money_sum
 
 
 def find_cost_inc(df_money_sum, df_opt_result, data, list_TID_claster = None):
     """
-    Функция принимающая на вход остатки в банкоматах и результат оптимизации 
-    и выдающая стоимость инкасаций, которые мы нашли в результате оптимизаций
+    Вычисляем затраты на инкасации, которые мы нашли в результате оптимизаций
+
+    Args:
+        df_money_sum (pd.DataFrame): остатки банкоматов на ночь ( с учетом пополнения банкоматов в течении дня)
+        df_opt_result (pd.DataFrame): результат оптимизации
+        data (Data): класс со входными данными
+        list_TID_claster (list, optional): список банкоматов (если хотим запустить функцию на подмножестве банкоматов)
     """
     df_money_start = data.get_money_start()
     params_dict = data.get_params_dict()
 
     if list_TID_claster is not None:
         df_money_start = df_money_start[df_money_start.TID.isin(list_TID_claster)]
-
 
     date_start = df_money_sum.columns.min()
     date_minus_1  = date_start - timedelta(days=1)
@@ -133,6 +119,15 @@ def find_cost_inc(df_money_sum, df_opt_result, data, list_TID_claster = None):
     return df_cost_inc
 
 def find_sum_fond(df_opt_result,  data, list_TID_claster = None):
+
+    """
+    Вычисляем затраты на фондирование
+
+    Args:
+        df_opt_result (pd.DataFrame): результат оптимизации
+        data (Data): класс со входными данными
+        list_TID_claster (list, optional): список банкоматов (если хотим запустить функцию на подмножестве банкоматов)
+    """
     df_money_in = data.get_money_in()
     df_money_start = data.get_money_start()
     if list_TID_claster is not None:
@@ -145,8 +140,20 @@ def find_sum_fond(df_opt_result,  data, list_TID_claster = None):
     df_fond = df_money_sum * params_dict['overnight'] / 100 / 365
     return df_fond
 
-def find_all_cost(df_money_sum, df_opt_result,data, list_TID_claster = None ):
+def find_all_cost(df_money_sum, df_opt_result, data, list_TID_claster = None ):
     """
+    Вычисляем суммарные затраты
+
+    Args:
+        df_money_sum (pd.DataFrame): остатки банкоматов на ночь (с учетом пополнения банкоматов в течении дня)
+        df_opt_result (pd.DataFrame): результат оптимизации
+        data (Data): класс со входными данными
+        list_TID_claster (list, optional): список банкоматов (если хотим запустить функцию на подмножестве банкоматов)
+
+    Returns:
+        all_cost_by_days (pd.DataFrame): суммарные затраты по дням
+        df_cost_inc (pd.DataFrame): затраты на инкасацию
+        df_fond (pd.DataFrame): затраты на фондирование
     """
     params_dict = data.get_params_dict()
     df_money_start = data.get_money_start()
@@ -163,7 +170,14 @@ def find_all_cost(df_money_sum, df_opt_result,data, list_TID_claster = None ):
     return all_cost_by_days, df_cost_inc, df_fond
 
 def find_ATM_balance_morning(df_opt_result,  data, list_TID_claster=None):
-    "Считаем баланыс банкоматов на утро после инкасации"
+    """
+    Находим балансы банкоматов на утро после инкасации
+
+    Args:
+        df_opt_result (pd.DataFrame): результат оптимизации
+        data (Data): класс со входными данными
+        list_TID_claster (list, optional): список банкоматов (если хотим запустить функцию на подмножестве банкоматов)
+    """
     df_money_in = data.get_money_in()
     df_money_start = data.get_money_start()
 
@@ -204,13 +218,23 @@ def find_ATM_balance_morning(df_opt_result,  data, list_TID_claster=None):
     return df_money_sum
 
 def find_routes_check(obj, data):
+    """
+    Находим маршруты для броневиков на каждый день
+    + Проверяем ограничение на начало и конец рабочего дня, что броневики успевают объехать их
+
+    Args:
+        obj : результат оптимизации MILP
+        data (Data): класс со входными данными
+
+    Returns:
+        df_routes (pd.DataFrame): маршуруты для броневиков
+    """
     df = pd.DataFrame(columns=['rebro', 'rebro_flg','date_int'])
     list_df = []
     for auto in range(len(obj)):
         for day in range(len(obj[auto][0])):    
             route_dict = obj[auto][0][day][0].route.extract_values()
             df_part = pd.DataFrame(route_dict.items(), columns=['rebro', 'rebro_flg'])
-            #df_part['date_int'] = day
             df_part['auto'] = obj[auto][2]
             df_part['date'] = obj[auto][0][day][1]
             df = pd.concat([df, df_part])
@@ -218,10 +242,6 @@ def find_routes_check(obj, data):
     df['date'] = pd.to_datetime(df['date'])
     df['ATM1'] = df['rebro'].apply(lambda x: x[0])
     df['ATM2'] = df['rebro'].apply(lambda x: x[1])
-
-    #df['date'] = df['date_int'].apply(lambda x: dict_num_to_date[x])
-    #dict_date_to_num = { k:v for (v, k) in enumerate(np.sort(list(df_money_sum.columns)))}
-    #dict_num_to_date= { v:k for (v, k) in enumerate(np.sort(list(df_money_sum.columns)))}
 
     params_dict = data.get_params_dict()
     start_time = params_dict['day_start']
@@ -231,11 +251,8 @@ def find_routes_check(obj, data):
     df_routes = pd.DataFrame(columns = ['auto','TID','start_time', 'end_time', 'date'])
 
     for date in list(df[(df.rebro_flg>0)].date.unique()):
-        #print('date', date)
-        #df_rebro_date = df[(df.date_int==date) & (df.rebro_flg>0)]
         auto_list = list(df[(df.date==date) & (df.rebro_flg>0)].auto.unique())
         for auto in auto_list:
-            #print(auto, date)
             df_rebro_date_auto = df[(df.date==date) & (df.auto==auto) & (df.rebro_flg>0)]
             
             current_ATM = df_rebro_date_auto[df_rebro_date_auto.ATM1==-1]['ATM2'].values[0]
@@ -245,7 +262,6 @@ def find_routes_check(obj, data):
             end_datetime = date + timedelta(hours = end_time.hour, minutes = end_time.minute)
             current_datetime = start_datetime
             while current_ATM!=-1:
-                #print(current_ATM)
                 list_ATM.append(current_ATM)
                 next_ATM = df_rebro_date_auto[df_rebro_date_auto.ATM1==current_ATM]['ATM2'].values[0]
 
@@ -254,12 +270,23 @@ def find_routes_check(obj, data):
                     next_ATM_start_datetime = end_ATM_datetime + timedelta(minutes=df_distance_matrix[(df_distance_matrix.Origin_tid==current_ATM) & (df_distance_matrix.Destination_tid==next_ATM)]['Total_Time'].values[0])
                 df_routes.loc[df_routes.shape[0]] = [auto, current_ATM, current_datetime, end_ATM_datetime, date]
 
-                assert  end_ATM_datetime<=end_datetime, f'alarm, for date={dict_num_to_date[date]} and auto={auto} end_time = {end_ATM_datetime} is bigger then {end_datetime}'
+                assert  end_ATM_datetime<=end_datetime, f'alarm, for date={date} and auto={auto} end_time = {end_ATM_datetime} is bigger then {end_datetime}'
                 current_ATM = next_ATM
                 current_datetime = next_ATM_start_datetime    
     return df_routes
 
 def find_routes_check_2(df, data):
+    """
+    Находим маршруты для броневиков на каждый день
+    + Проверяем ограничение на начало и конец рабочего дня, что броневики успевают объехать их
+
+    Args:
+        df (pd.DataFrame) : результат оптимизации
+        data (Data): класс со входными данными
+    
+    Returns:
+        df_routes (pd.DataFrame): маршуруты для броневиков
+    """
 
     params_dict = data.get_params_dict()
     start_time = params_dict['day_start']

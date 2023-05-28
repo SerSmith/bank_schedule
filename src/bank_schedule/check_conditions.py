@@ -4,6 +4,13 @@ import pandas as pd
 import numpy as np
 
 def condition_max_days_inc(df_opt_result, data):
+    """
+    Проверяем ограничение, что каждый банкомат мы должны инкасировать в течении n дней
+
+    Args:
+        df_opt_result (pd.DataFrame): результат оптимизации
+        data (Data): класс со входными данными
+    """
     params_dict = data.get_params_dict()
     df_money_in = data.get_money_in()
     unique_tid = list(df_opt_result.TID.unique())
@@ -21,7 +28,13 @@ def condition_max_days_inc(df_opt_result, data):
 
 def check_over_balance(df_opt_result,  data, list_TID_cluster = None):
     """
-    Считаем баланc банкоматов на утро после инкасации и проверяем не переполнены ли они
+    Проверяем ограничение, что не нет ли переполненных банкоматов после произосшедшей инкасации
+
+    Args:
+        df_opt_result (pd.DataFrame): результат оптимизации
+        data (Data): класс со входными данными
+        list_TID_claster (list, optional): список банкоматов (если хотим запустить функцию на подмножестве банкоматов)
+
     """
     df_money_in = data.get_money_in()
     df_money_start = data.get_money_start()
