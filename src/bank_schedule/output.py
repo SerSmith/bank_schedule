@@ -123,7 +123,7 @@ def find_cost_inc(df_money_sum, df_opt_result, data, list_TID_claster = None):
     for day in tqdm(unique_date):
         date_before = dict_num_to_date[dict_date_to_num[day]-1]
         #df_cost_inc[day] = [0] * num_TID
-        df_cost_inc.loc[list(df_opt_result[df_opt_result.date==day]['TID']), day] = df_money_sum.loc[list(df_opt_result[df_opt_result.date==day]['TID']), date_before] * 0.00001
+        df_cost_inc.loc[list(df_opt_result[df_opt_result.date==day]['TID']), day] = df_money_sum.loc[list(df_opt_result[df_opt_result.date==day]['TID']), date_before] * 0.0001
 
 
     df_cost_inc = df_cost_inc.fillna(0)
@@ -160,7 +160,7 @@ def find_all_cost(df_money_sum, df_opt_result,data, list_TID_claster = None ):
     df_fond_by_days = df_fond.sum()
     all_cost_by_days = pd.concat([df_cost_inc_by_days, df_fond_by_days, cost_auto], axis=1)
     all_cost_by_days.columns = ['Затраты на инкасацию','Затраты на фондирование','Затраты на машины']
-    return all_cost_by_days
+    return all_cost_by_days, df_cost_inc, df_fond
 
 def find_ATM_balance_morning(df_opt_result,  data, list_TID_claster=None):
     "Считаем баланыс банкоматов на утро после инкасации"
@@ -227,6 +227,7 @@ def find_routes_check(obj, data):
     start_time = params_dict['day_start']
     end_time = params_dict['day_end']
     min_wait = params_dict['min_wait']
+    df_distance_matrix = data.get_distance_matrix()
     df_routes = pd.DataFrame(columns = ['auto','TID','start_time', 'end_time', 'date'])
 
     for date in list(df[(df.rebro_flg>0)].date.unique()):
@@ -256,5 +257,73 @@ def find_routes_check(obj, data):
                 assert  end_ATM_datetime<=end_datetime, f'alarm, for date={dict_num_to_date[date]} and auto={auto} end_time = {end_ATM_datetime} is bigger then {end_datetime}'
                 current_ATM = next_ATM
                 current_datetime = next_ATM_start_datetime    
-    df_opt_result = df_routes[['TID','date','auto']]
-    return df_opt_result
+    return df_routes
+
+def find_routes_check_2(df, data):
+
+    params_dict = data.get_params_dict()
+    start_time = params_dict['day_start']
+    end_time = params_dict['day_end']
+    min_wait = params_dict['min_wait']
+    df_distance_matrix = data.get_distance_matrix()
+    df_routes = pd.DataFrame(columns = ['auto','TID','start_time', 'end_time', 'date'])
+
+    for auto in list(df.auto.unique()):
+        print(f'find routes for auto={auto}')
+        date_list = list(df[(df.auto==auto)].date.unique())
+        for date in date_list:
+            df_date_auto = df[(df.date==date) & (df.auto==auto)].sort_values('number').reset_index(drop=True)
+            
+            current_ATM = df_date_auto.loc[0,'TID']
+            start_datetime = date + timedelta(hours = start_time.hour, minutes = start_time.minute)
+            end_datetime = date + timedelta(hours = end_time.hour, minutes = end_time.minute, seconds=1)
+            current_datetime = start_datetime
+            num = 1
+            while num <= df_date_auto.shape[0]:
+                end_ATM_datetime = current_datetime + timedelta(minutes = min_wait)
+                if num <= (df_date_auto.shape[0]-1):
+                    next_ATM = df_date_auto.loc[num, 'TID']
+                    next_ATM_start_datetime = end_ATM_datetime + timedelta(minutes=df_distance_matrix[(df_distance_matrix.Origin_tid==current_ATM) & (df_distance_matrix.Destination_tid==next_ATM)]['Total_Time'].values[0])
+                df_routes.loc[df_routes.shape[0]] = [auto, current_ATM, current_datetime, end_ATM_datetime, date]
+
+                assert  end_ATM_datetime<=end_datetime, f'alarm, for date={date} and auto={auto} end_time = {end_ATM_datetime} is bigger then {end_datetime}'
+                current_ATM = next_ATM
+                current_datetime = next_ATM_start_datetime  
+                num+=1
+    return df_routes
+
+
+def postprocessing_and_make_excel(file_name, df_money_sum_morning, df_fond, all_cost_inc, all_cost_by_days, df_routes):
+    #df_money_sum.columns = df_money_sum.columns.astype('str')
+    df_money_sum_morning.columns = df_money_sum_morning.columns.astype('str')
+    df_fond.columns = df_fond.columns.astype('str')
+    df_fond = df_fond.apply(lambda x: round(x,2))
+    all_cost_inc.columns = all_cost_inc.columns.astype('str')
+    df_money_sum_morning.columns = df_money_sum_morning.columns.astype('str')
+    all_cost_by_days['Итого'] = all_cost_by_days['Затраты на инкасацию'] + all_cost_by_days['Затраты на фондирование'] + all_cost_by_days['Затраты на машины']
+    all_cost_by_days = all_cost_by_days.transpose()
+    all_cost_by_days.columns = all_cost_by_days.columns.astype('str')
+
+    all_cost_by_days = all_cost_by_days.reset_index()
+    all_cost_by_days = all_cost_by_days.rename(columns={'index':'Статья расходов'})
+    all_cost_by_days.iloc[:,1:] = all_cost_by_days.iloc[:,1:].apply(lambda x: round(x,2))
+
+    df_routes = df_routes.sort_values(['auto','start_time'])
+    df_routes.drop(['date'], axis=1, inplace=True)
+    df_routes['auto'] = df_routes['auto'].astype('int') + 1
+    df_routes.columns = [['Порядковый номер броневика','Устройство','Дата-время прибытия','Дата-время отъезда']]
+    df_routes['Дата-время прибытия'] = df_routes['Дата-время прибытия'].astype('str')
+    df_routes['Дата-время отъезда'] = df_routes['Дата-время отъезда'].astype('str')
+
+    # Create a new excel workbook
+    writer = pd.ExcelWriter(file_name, engine='xlsxwriter')
+    # Write each dataframe to a different worksheet.
+    #df_money_sum.to_excel(writer, sheet_name='Остатки в банкоматах на вечер')
+    df_money_sum_morning.to_excel(writer, sheet_name='остатки на конец дня')
+    df_fond.to_excel(writer, sheet_name='стоимость фондирования')
+    all_cost_inc.to_excel(writer, sheet_name='стоимость инкасации')
+    df_routes.to_excel(writer, sheet_name='маршруты')
+    all_cost_by_days.to_excel(writer, sheet_name='итог (суммарные затраты)')
+
+    # Save workbook
+    writer.close()
