@@ -178,5 +178,6 @@ cython_debug/
 *.html
 *.png
 !data/external/map.png
+!data/interim/cars_count.png
 *.pickle
 *.xlsx
