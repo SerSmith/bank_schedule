@@ -208,11 +208,11 @@ def find_routes_check(obj, data):
     list_df = []
     for auto in range(len(obj)):
         for day in range(len(obj[auto][0])):    
-            route_dict = obj[0][0][day][0].route.extract_values()
+            route_dict = obj[auto][0][day][0].route.extract_values()
             df_part = pd.DataFrame(route_dict.items(), columns=['rebro', 'rebro_flg'])
             #df_part['date_int'] = day
-            df_part['auto'] = auto 
-            df_part['date'] = obj[0][0][day][1]
+            df_part['auto'] = obj[auto][2]
+            df_part['date'] = obj[auto][0][day][1]
             df = pd.concat([df, df_part])
             
     df['date'] = pd.to_datetime(df['date'])
