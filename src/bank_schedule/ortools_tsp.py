@@ -1,6 +1,7 @@
 """Simple Travelling Salesperson Problem (TSP) between cities."""
 
-from typing import List, Tuple
+from typing import List, Tuple, Dict
+from copy import deepcopy
 
 import pandas as pd
 import numpy as np
@@ -237,16 +238,98 @@ def optimize_routes(loader: Data,
                                                       use_greedy=use_greedy)
     tids_for_collection = atms_df[tids_col].tolist()
 
-    route, route_time, route_time_sum = get_best_route(loader,
-                                                        tids_for_collection,
-                                                        n_iterations=n_iterations)
+    route, route_time, _ = get_best_route(loader, tids_for_collection, n_iterations=n_iterations)
 
-    return route, route_time, route_time_sum / max_route_time
+    if len(route) != len(set(route)):
+        raise ValueError('В маршруте дублируются точки (есть петли)')
+
+    cars_routes, cars_routes_times = split_route_by_cars(route, route_time, max_route_time)
+
+    max_time = - float('inf')
+    min_time = float('inf')
+
+    for _car, _route_time in cars_routes_times.items():
+        _route_time_sum = sum(_route_time)
+        max_time = max(max_time, _route_time_sum)
+        min_time = min(min_time, _route_time_sum)
+
+        if _route_time_sum > max_route_time:
+            raise ValueError(f'Время {sum(_route_time)} > {max_route_time} для машины {_car}')
+
+    return cars_routes, cars_routes_times, max_time, min_time
+
+
+def split_route_by_cars(myroute: List[int],
+                        myroute_time: List[int],
+                        max_route_time: float=720.0) -> Tuple[Dict, Dict]:
+    """Делим длинный маршрут между машинами
+
+    Args:
+        myroute (List[int]): _description_
+        myroute_time (List[int]): _description_
+
+    Raises:
+        ValueError: _description_
+
+    Returns:
+        Tuple[Dict, Dict]: _description_
+    """
+    cars_routes = {}
+    cars_routes_times = {}
+    car_num = 1
+
+    start = 0
+
+    time_cumsum = 10
+    i = 0
+
+    while i < len(myroute_time):
+        time_cumsum += myroute_time[i]
+
+        if time_cumsum <= max_route_time:
+            i += 1
+            continue
+
+        cars_routes[car_num] = deepcopy(myroute[start:i+1])
+        cars_routes_times[car_num] = deepcopy(myroute_time[start:i])
+        start = i + 1
+
+        car_num += 1
+        time_cumsum = 10
+        i += 1
+
+    cars_routes[car_num] = myroute[start:]
+
+    if start != len(myroute_time):
+        cars_routes_times[car_num] = myroute_time[start:]
+    else:
+        cars_routes_times[car_num] = [0]
+
+
+    for _car, _times in cars_routes_times.items():
+        cars_routes_times[_car][0] += 10 # Т.к. начальную точку мы инкассировали
+
+        if sum(_times) > max_route_time:
+            raise ValueError(f'Ошибка при разделении длинного маршрута: машина {_car}.'
+                             f' {sum(_times)} > {max_route_time}')
+
+        if len(cars_routes[_car]) - 1 != len(_times) and start != len(myroute_time):
+            raise ValueError(f'Длина маршрута {len(cars_routes[_car])} не соответствует '
+                             f'количеству временных отметок {len(_times)}: '
+                             f'машина {_car}.')
+
+    __full_rote = []
+    for _car, _route in cars_routes.items():
+        __full_rote += _route
+
+    if __full_rote != myroute:
+        raise ValueError('Изначальный и разделенный маршруты не совпадают')
+
+    return cars_routes, cars_routes_times
 
 
 if __name__ == '__main__':
     from datetime import datetime
-    from bank_schedule.data import Data
     from bank_schedule.constants import RAW_DATA_FOLDER
 
     N_POINTS = 200
@@ -255,7 +338,7 @@ if __name__ == '__main__':
     distances_df = myloader.get_distance_matrix()
     tids_list = distances_df['Origin_tid'].sample(n=N_POINTS, random_state=0).tolist()
 
-    start = datetime.now()
+    start_t = datetime.now()
     res = solve_tsp_ortools(tids_list, distances_df, depot=tids_list[0], verbose=True)
-    end = datetime.now()
-    print(f'Time: {end - start}')
+    end_t = datetime.now()
+    print(f'Time: {end_t - start_t}')

@@ -9,7 +9,7 @@ import numpy as np
 import scipy.stats
 
 from bank_schedule.data import Data
-from bank_schedule.forecast import load_model, LGBM_MODEL_NAME
+from bank_schedule import helpers
 
 INCOME_COL = 'money_in'
 RESIDUALS_COL = 'money'
@@ -28,7 +28,7 @@ INITIAL_DATE = '2022-08-31'
 
 def get_initial_resuduals(loader: Data,
                           initial_date: str=INITIAL_DATE,
-                          last_collection_equal_to_initial: bool=True):
+                          last_collection_method: str='constant'):
     """_summary_
 
     Args:
@@ -40,7 +40,7 @@ def get_initial_resuduals(loader: Data,
 
     residuals[DATE_COL] = pd.to_datetime(initial_date)
     residuals = add_last_cash_collection_date(
-        residuals, incomes, equal_to_initial=last_collection_equal_to_initial
+        residuals, incomes, last_collection_method=last_collection_method
         )
 
     return residuals
@@ -177,7 +177,7 @@ def add_nearest_overflow_date(today_residuals: pd.DataFrame,
 
 def add_last_cash_collection_date(residuals: pd.DataFrame,
                                   income: pd.DataFrame,
-                                  equal_to_initial: bool=True) -> pd.DataFrame:
+                                  last_collection_method: str='constant') -> pd.DataFrame:
     """Считает ориентировочную дату последней инкассации
     на момент 2022-08-31 исходя из средней заполняемости банкомата в день
 
@@ -185,27 +185,44 @@ def add_last_cash_collection_date(residuals: pd.DataFrame,
         residuals (pd.DataFrame): _description_
         income (pd.DataFrame): _description_
     """
-    if equal_to_initial:
+    method_vars = ['constant', 'forecast', 'random']
+
+    if last_collection_method not in method_vars:
+        raise ValueError(f'Last_collection_method must be in {method_vars}, '
+                         f'but {last_collection_method} found.')
+
+    if last_collection_method == 'constant':
         residuals['last_collection_date'] = pd.to_datetime(INITIAL_DATE)
         return residuals
 
-    avg_day_income = income.groupby('TID')[INCOME_COL].mean()
+    if last_collection_method == 'forecast':
+        avg_day_income = income.groupby('TID')[INCOME_COL].mean()
 
-    residuals = residuals.set_index('TID').loc[avg_day_income.index, :]
-    residuals_series = residuals[RESIDUALS_COL]
+        residuals = residuals.set_index('TID').loc[avg_day_income.index, :]
+        residuals_series = residuals[RESIDUALS_COL]
 
-    days_from_last_collection = np.ceil(residuals_series / avg_day_income).astype(int)
-    days_from_last_collection = days_from_last_collection.apply(lambda x: min(x, 14))
+        days_from_last_collection = np.ceil(residuals_series / avg_day_income).astype(int)
+        days_from_last_collection = days_from_last_collection.apply(lambda x: min(x, 14))
 
-    residuals['last_collection_date'] = residuals[DATE_COL] - \
-        pd.to_timedelta(days_from_last_collection, unit='D')
+        residuals['last_collection_date'] = residuals[DATE_COL] - \
+            pd.to_timedelta(days_from_last_collection, unit='D')
 
-    return residuals.reset_index()
+        return residuals.reset_index()
+
+    if last_collection_method == 'random':
+        start = pd.to_datetime('2022-08-18')
+        end = pd.to_datetime('2022-08-31')
+
+        residuals['last_collection_date'] = helpers.random_dates(start,
+                                                                 end,
+                                                                 n=residuals.shape[0])
+        return residuals
+
 
 
 def calc_label_to_weights_map(data: pd.DataFrame,
                               label_column: str=DAYS_TO_DEADLINE_COL
-                              ) -> Dict[str, int]:
+                              ) -> Dict[int, int]:
     """Возвращает словарь с весами классов для выборки их из данных
     Веса нужны, чтобы выбирать сбалансированный случайный сэмпл
 
@@ -221,15 +238,17 @@ def calc_label_to_weights_map(data: pd.DataFrame,
         Dict[str, int]: _description_
     """
 
-    mynnorm = scipy.stats.norm(0, 7)
-    return {i: mynnorm.pdf(i) for i in range(100)}
+    # mynnorm = scipy.stats.norm(0, 7)
+    # return {i: mynnorm.pdf(i) for i in range(100)}
 
-    # n_samples_by_classes = data[label_column].value_counts()
-    # n_samples = n_samples_by_classes.sum()
-    # n_classes = n_samples_by_classes.shape[0]
-    # classes_weights = n_samples / (n_classes * n_samples_by_classes)
-    # classes_weights = classes_weights.to_dict()
-    # return classes_weights
+    labels_vc = data[label_column].value_counts()
+
+    denum = labels_vc.index.to_numpy()
+    denum[denum == 0] = 1
+    weights = labels_vc / denum
+    weights = weights / weights.mean()
+    weights = weights ** 3
+    return weights.to_dict()
 
 
 def calc_samples_weights(data: pd.DataFrame,
@@ -430,7 +449,9 @@ def get_atms_for_today_collection_greedy(residuals: pd.DataFrame,
         tids_list = set(tids_list)
         cond = residuals['TID'].isin(tids_list)
 
+
     counts_by_days = residuals.loc[cond, 'days_to_deadline'].value_counts().sort_index().to_dict()
+    mean_count = residuals.loc[cond, 'days_to_deadline'].value_counts().mean()
 
     free_space = n_samples
     to_collect_list = []
