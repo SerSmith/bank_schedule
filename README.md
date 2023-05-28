@@ -3,7 +3,7 @@
 # Решение от команды Optimists
 
 Репозиторий содержит код для решения задачи №6 в рамках конкурса "Лидеры цифровой трансформации 2023"
-[https://leaders2022.innoagency.ru/task10](https://lk.leaders2023.innoagency.ru/)
+https://leaders2023.innoagency.ru/
 
 ## ДОКУМЕНТАЦИЯ
 Подробности работы алгоритмов описаны по ссылке https://docs.google.com/document/d/19ftHeXtqAmW5It6GZB7rXeG6sPUV7aQRcBvD6-6h00k/edit?usp=sharing
@@ -23,8 +23,6 @@
 Модуль протестирован для python 3.10.6
 
 Предполагается, что вы используете для контроля версий pyenv с плагином pyenv-virtualenv
-Если у вас windows + pyenv, пропускаем шаг 2 и 5, на шаге 6 в папке с проектом (!)
-делаем pyenv local 3.10.6
     
     0. Прочтите описание алгоритмов https://docs.google.com/document/d/19ftHeXtqAmW5It6GZB7rXeG6sPUV7aQRcBvD6-6h00k/edit?usp=sharing , а также примеры вызовов https://github.com/SerSmith/bank_schedule/blob/main/main.ipynb
     1. Установите python 3.10.6
