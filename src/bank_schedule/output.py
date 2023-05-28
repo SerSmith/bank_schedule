@@ -303,7 +303,7 @@ def find_routes_check_2(df, data):
             
             current_ATM = df_date_auto.loc[0,'TID']
             start_datetime = date + timedelta(hours = start_time.hour, minutes = start_time.minute)
-            end_datetime = date + timedelta(hours = end_time.hour, minutes = end_time.minute, seconds=1)
+            end_datetime = date + timedelta(hours = end_time.hour, minutes = end_time.minute)
             current_datetime = start_datetime
             num = 1
             while num <= df_date_auto.shape[0]:
