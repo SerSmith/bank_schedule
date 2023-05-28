@@ -9,3 +9,4 @@ pmdarima==2.0.3
 tqdm==4.65.0
 lightgbm==3.3.5
 k-means-constrained==0.7.2
+Pyomo==6.5.0
