@@ -2,8 +2,11 @@
 """
 import os
 
+import numpy as np
 import pandas as pd
+from scipy.stats import norm
 import matplotlib.pyplot as plt
+
 import plotly.express as px
 
 from bank_schedule.constants import CENTER_LAT, CENTER_LON
@@ -55,3 +58,20 @@ def geoplot_clusters(coords_df: pd.DataFrame,
 
     fig.write_html(os.path.join(html_folder, 'clusters.html'))
     fig.show()
+
+
+def plot_normal_distr(mean: float, std: float):
+    """Выводит график функции плотности для нормального рапределения
+
+    Args:
+        mean (_type_): _description_
+        std (_type_): _description_
+    """
+    mynorm = norm(mean, std)
+    x_vals = list( np.arange(-3 * std, 3 * std + 0.1, .1) )
+    y_vals = pd.Series(data=[mynorm.pdf(x) for x in x_vals], index=x_vals)
+    plt.plot(y_vals)
+
+
+def plot_route():
+    pass
