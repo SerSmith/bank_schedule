@@ -167,6 +167,7 @@ cython_debug/
 /data/**
 !/data/**/
 !/data/**/.gitkeep
+!/data/**/Params.xlsx
 
 # pyenv
 .python-version
