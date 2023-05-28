@@ -3,27 +3,26 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 
+"""Проставляем ближайшие ожидаемые даты переполнения банкоматов, если оно произойдет
+    в течение horizon дней
+1. Прогнозируем income на horizon дней вперед
+2. На основе прогноза определяем даты переполнения банкоматов
+    в пределах заданного горизонта horizon
+3. Проставляем даты переполнения в рамках горизонта
+Предполагается, что мы делаем это вечером после инкассации
 
-    """Проставляем ближайшие ожидаемые даты переполнения банкоматов, если оно произойдет
-     в течение horizon дней
-    1. Прогнозируем income на horizon дней вперед
-    2. На основе прогноза определяем даты переполнения банкоматов
-     в пределах заданного горизонта horizon
-    3. Проставляем даты переполнения в рамках горизонта
-    Предполагается, что мы делаем это вечером после инкассации
+Args:
+    today_residuals (pd.DataFrame): данные об остатках на текущий вечер
+    forecast_model (object): модель прогноза income
+    horizon (int, optional): горизонт анализа. Defaults to 3.
+    overflow_thresh (int, optional): порог переполнения. Defaults to 10**6.
 
-    Args:
-        today_residuals (pd.DataFrame): данные об остатках на текущий вечер
-        forecast_model (object): модель прогноза income
-        horizon (int, optional): горизонт анализа. Defaults to 3.
-        overflow_thresh (int, optional): порог переполнения. Defaults to 10**6.
+Raises:
+    ValueError: _description_
 
-    Raises:
-        ValueError: _description_
-
-    Returns:
-        List[int]: _description_
-    """
+Returns:
+    List[int]: _description_
+"""
 
 def find_ATM_balance_evening(df_opt_result, data, list_TID_claster = None):
     """
