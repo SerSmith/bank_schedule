@@ -227,6 +227,7 @@ def find_routes_check(obj, data):
     start_time = params_dict['day_start']
     end_time = params_dict['day_end']
     min_wait = params_dict['min_wait']
+    df_distance_matrix = data.get_distance_matrix()
     df_routes = pd.DataFrame(columns = ['auto','TID','start_time', 'end_time', 'date'])
 
     for date in list(df[(df.rebro_flg>0)].date.unique()):
@@ -256,7 +257,39 @@ def find_routes_check(obj, data):
                 assert  end_ATM_datetime<=end_datetime, f'alarm, for date={dict_num_to_date[date]} and auto={auto} end_time = {end_ATM_datetime} is bigger then {end_datetime}'
                 current_ATM = next_ATM
                 current_datetime = next_ATM_start_datetime    
-    #df_opt_result = df_routes[['TID','date','auto']]
+    return df_routes
+
+def find_routes_check_2(df, data):
+
+    params_dict = data.get_params_dict()
+    start_time = params_dict['day_start']
+    end_time = params_dict['day_end']
+    min_wait = params_dict['min_wait']
+    df_distance_matrix = data.get_distance_matrix()
+    df_routes = pd.DataFrame(columns = ['auto','TID','start_time', 'end_time', 'date'])
+
+    for auto in list(df.auto.unique()):
+        print(f'find routes for auto={auto}')
+        date_list = list(df[(df.auto==auto)].date.unique())
+        for date in date_list:
+            df_date_auto = df[(df.date==date) & (df.auto==auto)].sort_values('number').reset_index(drop=True)
+            
+            current_ATM = df_date_auto.loc[0,'TID']
+            start_datetime = date + timedelta(hours = start_time.hour, minutes = start_time.minute)
+            end_datetime = date + timedelta(hours = end_time.hour, minutes = end_time.minute, seconds=1)
+            current_datetime = start_datetime
+            num = 1
+            while num <= df_date_auto.shape[0]:
+                end_ATM_datetime = current_datetime + timedelta(minutes = min_wait)
+                if num <= (df_date_auto.shape[0]-1):
+                    next_ATM = df_date_auto.loc[num, 'TID']
+                    next_ATM_start_datetime = end_ATM_datetime + timedelta(minutes=df_distance_matrix[(df_distance_matrix.Origin_tid==current_ATM) & (df_distance_matrix.Destination_tid==next_ATM)]['Total_Time'].values[0])
+                df_routes.loc[df_routes.shape[0]] = [auto, current_ATM, current_datetime, end_ATM_datetime, date]
+
+                assert  end_ATM_datetime<=end_datetime, f'alarm, for date={date} and auto={auto} end_time = {end_ATM_datetime} is bigger then {end_datetime}'
+                current_ATM = next_ATM
+                current_datetime = next_ATM_start_datetime  
+                num+=1
     return df_routes
 
 
