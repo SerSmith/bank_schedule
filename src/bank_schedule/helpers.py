@@ -1,6 +1,8 @@
 """Вспомогательные функции
 """
 import os
+from typing import List, Tuple
+
 from math import pi
 from warnings import warn
 
@@ -295,6 +297,40 @@ def filter_train_by_needed_days(train_data: pd.DataFrame,
     train_data = train_data.copy()
     dayofyear = extract_dayofyear_series(train_data)
     return train_data[dayofyear.isin(needed_days)]
+
+
+def line_route_to_points_pairs(route: List[int]) -> List[Tuple[int, int]]:
+    """Преобразует маршрут в массивов точеепар из двоездов
+
+    Args:
+        route (List[int]): _description_
+
+    Returns:
+        List[Tuple[int, int]]: _description_
+    """
+    pairs = []
+    for i in range(len(route) - 1):
+        pairs.append((route[i], route[i + 1]))
+    return pairs
+
+
+def random_dates(start, end, n=10):
+    """генерит рандомные даты в указанном диапазоне
+
+    Args:
+        start (_type_): _description_
+        end (_type_): _description_
+        n (int, optional): _description_. Defaults to 10.
+
+    Returns:
+        _type_: _description_
+    """
+    start_u = start.value//10**9
+    end_u = end.value//10**9
+    np.random.seed(0)
+    result = pd.to_datetime(np.random.randint(start_u, end_u, n), unit='s')
+    result = result.date
+    return pd.to_datetime(result)
 
 
 if __name__ == '__main__':
