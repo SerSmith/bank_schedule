@@ -39,7 +39,7 @@ class DataClaster(Data):
         assert self.clustered_tids is not None, "run run_cluster first"
         return self.clustered_tids[self.clustered_tids["label"] == cluster_num]['TID'].unique()
     
-    def get_money_start(self, cluster_num):
+    def get_money_start(self, cluster_num=None):
         super().get_money_start()
 
         if cluster_num is None:
