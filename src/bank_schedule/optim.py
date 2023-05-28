@@ -145,6 +145,7 @@ class OptModel:
         # Облегчим задачу оптимизации - эврестически ограничив максимальную длину маршрута
         def con_max_inc(model, date):
             return quicksum([model.money_inc[tid, date] for tid in model.TIDS]) <= model.MAX_TIDS_BY_DAY
+
         self.model.con_max_inc = pyo.Constraint(self.model.DATES, rule=con_max_inc)
 
     
@@ -225,6 +226,7 @@ class OptModel:
         def con_money_inside_TID_2(model, tid, date):
             return model.money_inside_TID[tid, date] <= (1 - model.money_inc[tid, date]) * self.model.M
         self.model.con_money_inside_TID_2 = pyo.Constraint(self.model.TIDS, self.model.DATES, rule=con_money_inside_TID_2)
+
 
         # Запрещено иметь деньги в банкомате вышк определенной суммы
         def con_max_money(model, tid, date):
@@ -357,18 +359,22 @@ def presolve(data, date_from, day_count, top_tids_quant, cluster_num, tries, ste
 
 
     for now_date in tqdm([date_from + timedelta(days=n) for n in range(day_count)], desc=f"presolve cluster_num={cluster_num}"):
-
+        optim_options = {
+                'ratioGap': 0.15, 
+                'sec': 180,
+                'threads': 8,
+                "heuristics": "on",
+                "autoScale": 'on',
+                "feaspump": "on",
+                "greedyHeuristic": "on"
+                }
+        tids_have_to_visit = find_TID_for_inc(money_start, days_from_inc, data)
         for i in range(tries):
             optim = OptModel(data)
 
             tids = set(optim.get_top_tids(top_tids_quant + i * step, money_start, days_from_inc, data))
 
-            tids_have_to_visit = find_TID_for_inc(money_start, days_from_inc, data)
-
-
             tids = tids.union(set(tids_have_to_visit))
-            
-            #print(f'all tids: {tids}')
 
             print(f"Обяззательных постоматов {len(tids_have_to_visit)}: {tids_have_to_visit}")
             print(f"Всего оптимизируемых банкоматов {len(tids)}")
@@ -378,21 +384,32 @@ def presolve(data, date_from, day_count, top_tids_quant, cluster_num, tries, ste
             optim.add_gready_concepts()
             optim.fixed_some_TID(tids_have_to_visit, [])
 
-            optim_options = {
-                'ratioGap': 0.15, 
-                'sec': 300,
-                'threads': 8,
-                "heuristics": "on",
-                "autoScale": 'on',
-                "feaspump": "on",
-                "greedyHeuristic": "on"
-                }
-
             model, result = optim.solve(optim_options)
-            if result['Solver'][0]['Termination condition']==TerminationCondition.optimal:
+            if (result['Solver'][0]['Termination condition']==TerminationCondition.optimal) | (result['Solver'][0]['Termination condition']==TerminationCondition.maxTimeLimit):
                 print(f'find solution for {top_tids_quant + i * step}')
                 break
-        #assert result['Solver'][0]['Termination condition']==TerminationCondition.optimal   
+        if not ((result['Solver'][0]['Termination condition'] == TerminationCondition.optimal) | (result['Solver'][0]['Termination condition']==TerminationCondition.maxTimeLimit)):
+            i = 1
+            while top_tids_quant  - i * int(step/2) > 0 :
+                optim = OptModel(data)
+
+                tids = set(optim.get_top_tids(top_tids_quant - i * step, money_start, days_from_inc, data))
+
+                tids = tids.union(set(tids_have_to_visit))
+
+                print(f"Обяззательных постоматов {len(tids_have_to_visit)}: {tids_have_to_visit}")
+                print(f"Всего оптимизируемых банкоматов {len(tids)}")
+
+
+                optim.add_basic_conceptions(list(tids), money_start, days_from_inc, now_date, now_date, cluster_num)
+                optim.add_gready_concepts()
+                optim.fixed_some_TID(tids_have_to_visit, [])
+
+                model, result = optim.solve(optim_options)
+                if (result['Solver'][0]['Termination condition']==TerminationCondition.optimal) | (result['Solver'][0]['Termination condition']==TerminationCondition.maxTimeLimit):
+                    print(f'find solution for {top_tids_quant - i * step}')
+                    break   
+                i += 1
         models.append([model, now_date])
         incs = calc_inc(model)
 

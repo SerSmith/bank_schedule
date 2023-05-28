@@ -1,9 +1,10 @@
 """Скрипты для кластеризации банкоматов
 """
-from typing import Optional
+from typing import Optional, List
 import pandas as pd
 
 from k_means_constrained import KMeansConstrained
+from sklearn.cluster import KMeans
 
 from bank_schedule.data import Data
 from bank_schedule import helpers
@@ -15,6 +16,7 @@ LABEL_COL = 'label'
 def clusterize_atm(loader: Data,
                    n_clusters: int,
                    allowed_percent=None,
+                   tids_list: Optional[List[int]]=None,
                    random_state: Optional[int]=RS) -> pd.DataFrame:
     """Распределяет банкоматы по кластерам с помощью KMeansConstrained
 
@@ -28,16 +30,19 @@ def clusterize_atm(loader: Data,
     Returns:
         pd.DataFrame: датафрейм с колонками ['TID', 'label']
     """
+    geo_df = loader.get_geo_TIDS()
 
     # load geodata
-    geo_df = loader.get_geo_TIDS()
+    if tids_list is not None:
+        geo_df = geo_df[geo_df['TID'].isin(tids_list)].reset_index(drop=True)
 
     size_min = None
     size_max = None
 
-    if allowed_percent is not None:
+    if allowed_percent is not None and n_clusters > 1:
         quant = geo_df["TID"].count() / n_clusters
         size_min = round(max(quant * (1 - allowed_percent), 1))
+        size_min = max(size_min, 1)
         size_max = round(quant * (1 + allowed_percent))
 
 
@@ -59,6 +64,45 @@ def clusterize_atm(loader: Data,
         size_max=size_max,
         random_state=random_state
     )
+
+    labels = kmeans.fit_predict(coords_df[['x', 'y']])
+
+    coords_df[LABEL_COL] = labels
+
+    return coords_df[['TID', LABEL_COL]]
+
+
+def clusterize_atm_kmeans(loader: Data,
+                          n_clusters: int,
+                          tids_list: Optional[List[int]]=None,
+                          random_state: Optional[int]=RS) -> pd.DataFrame:
+    """Распределяет банкоматы по кластерам с помощью классического KMeans
+
+    Args:
+        geo_df (pd.DataFrame): геоданные о раположении кластеров колонки [longitude, latitude],
+         индекс TID
+        n_clusters (int): xbckj число кластеров
+        random_state (Optional[int], optional): random_state. Defaults to RS.
+
+    Returns:
+        pd.DataFrame: датафрейм с колонками ['TID', 'label']
+    """
+
+    geo_df = loader.get_geo_TIDS()
+
+    # load geodata
+    if tids_list is not None:
+        geo_df = geo_df[geo_df['TID'].isin(tids_list)].reset_index(drop=True)
+
+    # get cartesian coordinates
+    coords_df = helpers.calc_cartesian_coords(lat_series=geo_df['latitude'],
+                                              lon_series=geo_df['longitude'])
+    coords_df = geo_df.join(coords_df)
+
+    # clusterize
+    kmeans = KMeans(n_clusters=n_clusters,
+                    n_init='auto',
+                    random_state=random_state)
 
     labels = kmeans.fit_predict(coords_df[['x', 'y']])
 

@@ -3,8 +3,9 @@ from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
 
-def condition_max_days_inc(df_opt_result, df_money_in, data):
+def condition_max_days_inc(df_opt_result, data):
     params_dict = data.get_params_dict()
+    df_money_in = data.get_money_in()
     unique_tid = list(df_opt_result.TID.unique())
     date_last = df_money_in.date.max()
     date_first = df_money_in.date.min()

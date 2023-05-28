@@ -1,5 +1,10 @@
-import pandas as pd
+"""Скрипты для работы с входными данными задачи
+"""
+
 import os
+from typing import List, Optional
+
+import pandas as pd
 
 
 class Data():
@@ -30,8 +35,8 @@ class Data():
         if self.df_money is None:
             money_folder = os.path.join(self.__data_folder, 'terminal_data_hackathon v4.xlsx')
             self.df_money = pd.read_excel(money_folder, sheet_name='Incomes')
-        return self.df_money    
-    
+        return self.df_money
+
     def get_money_start(self):
         if self.df_money_start is None:
             if self.df_money is None:
@@ -60,11 +65,40 @@ class Data():
             geo_TIDS_folder = os.path.join(self.__data_folder, 'terminal_data_hackathon v4.xlsx')
             self.df_geo_TIDS = pd.read_excel(geo_TIDS_folder, sheet_name='TIDS')
         return self.df_geo_TIDS
-    
+
     def get_params_dict(self):
         if self.params_dict is None:
             params_folder = os.path.join(self.__data_folder, 'Params.xlsx')
             df_params= pd.read_excel(params_folder)
             self.params_dict = df_params.set_index('param')['value'].to_dict()
         return self.params_dict
-    
+
+
+def distances_matrix_from_dataframe(distance_matrix_df: pd.DataFrame,
+                                    tids_list: Optional[List[int]]=None,
+                                    convert_to_int: bool=True,
+                                    add_delay_time: bool=True) -> List[List[float]]:
+    """_summary_
+
+    Args:
+        distance_matrix_df (pd.DataFrame): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    dists_matrix = distance_matrix_df.pivot(index='Origin_tid',
+                                            columns='Destination_tid').fillna(0)
+    dists_matrix.columns = [c[1] for c in dists_matrix.columns]
+    dists_matrix.index.name = None
+
+    if tids_list is not None:
+        dists_matrix = dists_matrix.loc[tids_list, tids_list]
+    dists_matrix = dists_matrix.to_numpy()
+
+    if add_delay_time:
+        dists_matrix += 10
+
+    if convert_to_int:
+        dists_matrix = (100 * dists_matrix).astype(int)
+    # матрица расстояний создается для ortools, он работает только с int
+    return dists_matrix

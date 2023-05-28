@@ -13,24 +13,37 @@ from bank_schedule import helpers
 from bank_schedule.data import Data
 from bank_schedule.constants import LGBM_FOLDER, RAW_DATA_FOLDER
 
+# модели прогноза income, которые у нас есть
+# lgbm - честный прогноз
+# historical - берет значения из исторических данных (нужно для экспериментов)
+
+LGBM_MODEL_NAME = 'lgbm'
+HISTORICAL_MODEL_NAME = 'historical'
+ROLLING_MODEL_NAME = 'rolling'
+KNOWN_FORECAST_MODELS = [LGBM_MODEL_NAME, HISTORICAL_MODEL_NAME, ROLLING_MODEL_NAME]
+
+END_OF_TRAIN_DATE = '2022-10-31'
 
 
 class SimpleRollingForecast:
     """class for simple timeseries forecast with rolling window and exponential smoothing
     """
     def __init__(self,
-                 window,
-                 alpha=0,
+                 window: int=10,
+                 alpha: float=0.0
                  ):
         """_summary_
 
         Args:
-            window (_type_): окно, по которому считается среднее
-            alpha (float, optional): фактор сглаживания. Defaults to 0.
+            window (_type_): окно, по которому считается среднее. Defaults to 10
+            alpha (float, optional): фактор сглаживания. Defaults to 0.0
         """
         self.window = window
         self.alpha = alpha
         self.rolling_mean = None
+        self.incomes_df = None
+        self.__fit_on_historical()
+
 
     def fit(self, series: pd.Series):
         """считает среднее по скользящему окну с экспоненциальным сглаживанием
@@ -46,7 +59,8 @@ class SimpleRollingForecast:
         self.rolling_mean = window_series.ewm(alpha=self.alpha).mean().iloc[-1]
 
 
-    def predict(self, n_periods: int) -> pd.Series:
+    def predict(self,
+                n_periods: int) -> pd.Series:
         """прогнозирует просто средним по скользящему окну
         на заданное количество дней вперед
 
@@ -61,7 +75,17 @@ class SimpleRollingForecast:
         """
         if self.rolling_mean is None:
             raise ValueError("Model not fitted")
+
         return pd.Series(self.rolling_mean * np.ones(n_periods))
+
+
+    def __fit_on_historical(self):
+        loader = Data(RAW_DATA_FOLDER)
+        incomes_df = loader.get_money_in()
+        thresh_date = pd.to_datetime(END_OF_TRAIN_DATE)
+        train = incomes_df.loc[incomes_df['date'] <= thresh_date, 'money_in']
+
+        self.fit(train)
 
 
 def train_lgbm_models(max_forecast_horizon: int=30,
@@ -207,18 +231,22 @@ class IncomeForecastLGBM():
             n_periods (int): _description_
         """
         predictions_list = []
+        train_cond = self.train.index <= pd.to_datetime(END_OF_TRAIN_DATE)
+        mean_forecast = self.train[train_cond].groupby('TID')['money_in'].mean()
+        mean_forecast = mean_forecast.reset_index()
+
         for i in range(1, n_periods + 1):
-            result = self.train.groupby('TID')['money_in'].mean()
-            result = result.reset_index()
+            result = mean_forecast.copy()
             result['date'] = today_date + pd.Timedelta(days=i)
             predictions_list.append(result)
+
         return pd.concat(predictions_list)[['date', 'TID', 'money_in']]
 
 
     def predict(self,
                 today_date: Union[str, np.datetime64],
                 n_periods: int,
-                income_threshold: Union[int, None]=10**6) -> pd.DataFrame:
+                income_threshold: Union[int, None]=None) -> pd.DataFrame:
         """_summary_
 
         Args:
@@ -267,6 +295,22 @@ class IncomeForecastLGBM():
             result.loc[result['money_in'] > income_threshold, 'money_in'] = income_threshold
 
         return result
+
+
+    def predict_cumsum(self,
+                       today_date: Union[str, np.datetime64],
+                       n_periods: int,
+                       income_threshold: Union[int, None]=None):
+        """_summary_
+
+        Args:
+            today_date (Union[str, np.datetime64]): _description_
+            n_periods (int): _description_
+            income_threshold (Union[int, None], optional): _description_. Defaults to None.
+        """
+        predicts = self.predict(today_date, n_periods, income_threshold)
+        predicts['money_in_cumsum'] = predicts.groupby(['TID'])['money_in'].cumsum()
+        return predicts
 
 
 class ForecastHistorical():
@@ -356,10 +400,37 @@ class ForecastHistorical():
         return pd.concat(forecast_list, ignore_index=True)[['date', 'TID', 'money_in']]
 
 
+FORECAST_MODELS_DICT = {
+    LGBM_MODEL_NAME: IncomeForecastLGBM,
+    HISTORICAL_MODEL_NAME: ForecastHistorical,
+    ROLLING_MODEL_NAME: SimpleRollingForecast,
+}
+
+
+def load_model(model_name: str) -> object:
+    """Загружает модель
+
+    Args:
+        model_name (str): название из KNOWN_FORECAST_MODELS
+
+    Returns:
+        object: _description_
+    """
+    if model_name not in KNOWN_FORECAST_MODELS:
+        raise ValueError(f"Unknown forecast model {model_name}")
+    return FORECAST_MODELS_DICT[model_name]()
+
+
 if __name__=='__main__':
 
     # train_lgbm_models()
     # print('train_lgbm_models done')
 
-    my_model = IncomeForecastLGBM()
-    print(my_model.predict(pd.to_datetime('2022-11-30'), 30))
+    for mdl in KNOWN_FORECAST_MODELS:
+        print(mdl)
+        my_model = load_model(mdl)
+        print(my_model)
+        if mdl == ROLLING_MODEL_NAME:
+            print(my_model.predict(30))
+        else:
+            print(my_model.predict(pd.to_datetime('2022-11-30'), 30))
