@@ -269,7 +269,7 @@ class OptModel:
         for key in optim_options:
             opt.options[key] = optim_options[key]
 
-        results = opt.solve(self.model, tee=True)
+        results = opt.solve(self.model, tee=False)
 
         print(results['Problem'])
         print(results['Solver'])
@@ -290,20 +290,18 @@ class OptModel:
         return weights[["TID", 'weight']]
 
 
-    def get_top_tids(self, quant, money_start, days_from_inc, data):
+    def get_top_tids(self, quant, money_start, days_from_inc):
         """Получение наиболее перспекутивных бнкоматов
 
         Args:
             quant (int): кол-во банкоматов
             money_start (pd.DataFrame): Количество денег на начало дня
             days_from_inc (pd.DataFrame): Дней с предыдущего пополнения
-            data (dataClaster): Данные
 
         Returns:
             _type_: _description_
         """
-        params = data.get_params_dict()
-        weights = self.calc_weights(money_start, days_from_inc, params)
+        weights = self.calc_weights(money_start, days_from_inc)
         return weights.sort_values('weight', ascending=False)['TID'].head(quant).to_list()
 
 
@@ -424,7 +422,8 @@ def one_try_optim(top_tids_quant,
                   data,
                   tids_have_to_visit,
                   now_date,
-                  optim_options):
+                  optim_options,
+                  cluster_num):
     """Один внутренний запуск оптимизации
 
     Args:
@@ -435,6 +434,7 @@ def one_try_optim(top_tids_quant,
         tids_have_to_visit (list(int)): Банкоматы, которые мы обзаны посетить
         now_date (datetime.date): Дата сейчас
         optim_options (dict): Настройки оптимизации
+        cluster_num (int): Номер кластера
 
     Returns:
         _type_: _description_
@@ -442,7 +442,7 @@ def one_try_optim(top_tids_quant,
     optim = OptModel(data)
 
     # Выбираем банкоматы - кандидаты для оптимизации
-    tids = set(optim.get_top_tids(top_tids_quant, money_start, days_from_inc, data))
+    tids = set(optim.get_top_tids(top_tids_quant, money_start, days_from_inc))
 
     tids = tids.union(set(tids_have_to_visit))
 
@@ -522,7 +522,8 @@ def run_milp_optim(data,
                                           data,
                                           tids_have_to_visit,
                                           now_date,
-                                          optim_options)
+                                          optim_options,
+                                          cluster_num)
 
             # Если мы не нашли подходящее решение, то перезапустимся
             if (result['Solver'][0]['Termination condition']==TerminationCondition.optimal) | (result['Solver'][0]['Termination condition']==TerminationCondition.maxTimeLimit):
@@ -540,7 +541,8 @@ def run_milp_optim(data,
                                 data,
                                 tids_have_to_visit,
                                 now_date,
-                                optim_options)
+                                optim_options,
+                                cluster_num)
 
                 if (result['Solver'][0]['Termination condition']==TerminationCondition.optimal) | (result['Solver'][0]['Termination condition']==TerminationCondition.maxTimeLimit):
                     print(f'find solution for {top_tids_quant - i * step}')
