@@ -510,8 +510,8 @@ def run_milp_optim(data,
 
         # Настройки солвера
         optim_options = {
-                'ratioGap': 0.15, 
-                'sec': 180,
+                'ratioGap': 0.1, 
+                'sec': 200,
                 'threads': 8,
                 "heuristics": "on",
                 "autoScale": 'on',
