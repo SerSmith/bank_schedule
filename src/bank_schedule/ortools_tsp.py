@@ -175,7 +175,7 @@ def get_best_route(loader: Data,
     Returns:
         List[int]: _description_
     """
-    distances_df = loader.get_distance_matrix()
+    distances_df = loader.get_distance_matrix().copy()
 
     best_sum_time = float('inf')
     best_route = []
@@ -359,7 +359,7 @@ if __name__ == '__main__':
     N_POINTS = 200
 
     myloader = Data(RAW_DATA_FOLDER)
-    distances_df = myloader.get_distance_matrix()
+    distances_df = myloader.get_distance_matrix().copy()
     tids_list = distances_df['Origin_tid'].sample(n=N_POINTS, random_state=0).tolist()
 
     start_t = datetime.now()

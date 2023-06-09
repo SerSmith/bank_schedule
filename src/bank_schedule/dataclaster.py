@@ -30,15 +30,22 @@ class DataClaster(Data):
 
         return out
 
-    def run_cluster(self, allowed_percent, n_clusters):
-        self.clustered_tids = cluster.clusterize_atm(self, allowed_percent=allowed_percent, n_clusters=n_clusters)
+    def run_cluster(self, allowed_percent, n_clusters, use_dichotomous: bool=False):
+        if use_dichotomous:
+            self.clustered_tids = cluster.clusterize_atm_dichotomous(self,
+                                                                     allowed_percent=allowed_percent,
+                                                                     n_clusters=n_clusters)
+        else:
+            self.clustered_tids = cluster.clusterize_atm(self,
+                                                         allowed_percent=allowed_percent,
+                                                         n_clusters=n_clusters)
         return self
-    
+
     def get_tids_by_claster(self, cluster_num):
 
         assert self.clustered_tids is not None, "run run_cluster first"
         return self.clustered_tids[self.clustered_tids["label"] == cluster_num]['TID'].unique()
-    
+
     def get_money_start(self, cluster_num=None):
         super().get_money_start()
 
