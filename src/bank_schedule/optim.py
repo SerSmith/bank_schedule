@@ -97,7 +97,9 @@ class OptModel:
 
         self.model.MAX_DATE = max(self.model.DATES)
 
-        self.model.MAX_TIDS_BY_DAY = calc_max_tid_by_date(len(self.model.TIDS), params)
+        self.model.MAX_TIDS_BY_DAY = calc_max_tid_by_date(len(self.data.get_tids_by_claster(cluster)), params)
+
+        print("MAX_TIDS_BY_DAY: ", self.model.MAX_TIDS_BY_DAY)
 
         weights = self.calc_weights(money_start, days_from_inc)
 
@@ -147,6 +149,12 @@ class OptModel:
             return quicksum([model.money_inc[tid, date] for tid in model.TIDS]) <= model.MAX_TIDS_BY_DAY
 
         self.model.con_max_inc = pyo.Constraint(self.model.DATES, rule=con_max_inc)
+
+        # Облегчим задачу оптимизации - эврестически ограничив максимальную длину маршрута
+        def con_min_inc(model, date):
+            return quicksum([model.money_inc[tid, date] for tid in model.TIDS]) >= model.MAX_TIDS_BY_DAY * 0.6
+
+        self.model.con_min_inc = pyo.Constraint(self.model.DATES, rule=con_min_inc)
 
     
 
@@ -316,6 +324,7 @@ def calc_max_tid_by_date(tids_quant, params, add_coeff=1.2):
     Returns:
         _type_: _description_
     """
+    print("tids_quant: ", tids_quant)
     return math.ceil(tids_quant / params['max_days_inc'] * add_coeff)
 
 def update_money_start(money_start, money_in_full, now_date, incs):
@@ -501,8 +510,8 @@ def run_milp_optim(data,
 
         # Настройки солвера
         optim_options = {
-                'ratioGap': 0.15, 
-                'sec': 180,
+                'ratioGap': 0.1, 
+                'sec': 200,
                 'threads': 8,
                 "heuristics": "on",
                 "autoScale": 'on',
